@@ -1,0 +1,12 @@
+current.vms
+logs/
+benchmark-logs/benchmark.log
+dump.log
+**/__pycache__
+**/*.pyc
+data/
+*.out
+**/.DS_Store
+tests/.pytest.log
+.dockerignore
+data/

@@ -15,6 +15,7 @@ class ADKGMsgType:
     ACSS = "A"
     RBC = "R"
     ABA = "B"
+    PREKEY = "P"
     KEY = "K"
     
 class CP:
@@ -102,7 +103,7 @@ class ADKG:
 
         while True:
             (dealer, _, shares, commitments) = await self.acss.output_queue.get()
-            outputs[dealer] = [shares, commitments]
+            outputs[dealer] = {'shares':shares, 'commits':commitments}
             if len(outputs) >= self.n - self.t:
                 # print("Player " + str(self.my_id) + " Got shares from: " + str([output for output in outputs]))
                 acss_signal.set()
@@ -252,6 +253,8 @@ class ADKG:
         work_tasks = await asyncio.gather(*[_setup(j) for j in range(self.n)])
         rbc_signal = asyncio.Event()
         rbc_values = [None for i in range(self.n)]
+        pre_key_signal  = asyncio.Event()
+        pre_key_values = {'share':None, 'my_r_exp':None, 'r_exps': [None for _ in range(self.n)]}
 
         return (
             self.commonsubset(
@@ -264,42 +267,111 @@ class ADKG:
                 [_.put_nowait for _ in aba_inputs],
                 [_.get for _ in aba_outputs],
             ),
-            self.derive_key(
+            self.pre_key(
                 acss_outputs,
                 acss_signal,
                 rbc_values,
                 rbc_signal,
+                pre_key_values, 
+                pre_key_signal,
+            ),
+            self.derive_key(
+                rbc_values,
+                pre_key_values, 
+                pre_key_signal,
             ),
             work_tasks,
         )
 
-    async def derive_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal):
-        # Waiting for the ABA to terminate
+    async def pre_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal, pre_key_values, pre_key_signal):
         await rbc_signal.wait()
         rbc_signal.clear()
-
+        
         mks = set() # master key set
         for ks in  rbc_values:
             if ks is not None:
                 mks = mks.union(set(list(ks)))
-
+        
+        # Waiting for all ACSS to terminate
         for k in mks:
             if k not in acss_outputs:
                 await acss_signal.wait()
                 acss_signal.clear()
+
+        # share of the master secret
+        z_0 = self.ZR(0)
+        for node in mks:
+            z_0 = z_0 + acss_outputs[node]['shares']['msg'][0]
+
+        secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
+        randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
+        for idx in range(self.sc-1):
+            for node in mks:
+                secrets[idx][node] = acss_outputs[node]['shares']['msg'][idx+1]
+                randomness[idx][node] = acss_outputs[node]['shares']['msg'][idx]
         
-        secret = self.ZR(0)
-        agg_x = [self.G1.identity() for _ in range(self.n)]
-        for k in mks:
-            secret = secret + acss_outputs[k][0][0][0]
-            # Computing aggregated commitments
-            for i in range(self.t):
-                agg_x[i] = agg_x[i]*acss_outputs[k][1][0][i]
+        matrix = [[self.ZR(i+1)**j for j in range(self.n)] for i in range(self.t+1)]
+
+        z_shares = {0:z_0}
+        r_shares = {0:self.ZR(0)}
+
+        def dot(a, b):
+            res = self.ZR(0)
+            for i in range(len(a)):
+                res = res + a[i]*b[i]
+            return res
+
+        for i in range(self.t+1):
+            z_shares[i+1] = dot(matrix[i], secrets[0])
+            r_shares[i+1] = dot(matrix[i], randomness[0])
+        for i in range(self.t+1, self.deg):
+            z_shares[i+1] = dot(matrix[i-(self.t+1)], secrets[1])
+            r_shares[i+1] = dot(matrix[i-(self.t+1)], randomness[1])
         
+        for i in range(self.deg, self.n):
+            z_shares[i+1] = self.poly.interpolate_at( list(z_shares.items()), i+1)
+            r_shares[i+1] = self.poly.interpolate_at(list(r_shares.items()), i+1)
+        
+        r_exps = [self.h**r_shares[i+1] for i in range(self.n)]
+
+        
+        # Sending PREKEY messages
+        keytag = ADKGMsgType.PREKEY
+        send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
+
+        for i in range(self.n):
+            send(i, (z_shares[i+1], r_exps))
+        
+        
+        sk_shares = []
+        r_exp_shares = []
+        while True:
+            # TODO(@sourav) FIXME!! Important to add validation checks
+            (sender, msg) = await recv()
+            sk_share, sender_r_exp = msg
+            sk_shares.append([sender+1, sk_share])
+            r_exp_shares.append([sender+1, sender_r_exp[sender]])
+            pre_key_values['r_exps'][sender] = sender_r_exp
+            if len(sk_shares) == self.t+1:
+                pre_key_values['share'] =  self.poly.interpolate_at(sk_shares, 0)
+                pre_key_values['my_r_exp'] = interpolate_g1_at_x(r_exp_shares, 0, self.G1, self.ZR)
+                pre_key_signal.set()
+            
+            if len(sk_shares) == self.n:
+                return
+        
+
+    async def derive_key(self, rbc_values, pre_key_values, pre_key_signal):
+        # Waiting for the ABA to terminate
+        await pre_key_signal.wait()
+        pre_key_signal.clear()
+
+        secret = pre_key_values['share']
         x = self.g**secret
         y = self.h**secret
         cp = CP(self.g, self.h, self.ZR)
         chal, res = cp.dleq_prove(secret, x, y)
+        r_exps_row = [None]*self.n
 
         keytag = ADKGMsgType.KEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
@@ -307,12 +379,12 @@ class ADKG:
         sr = Serial(self.G1)
         yb, chalb, resb = sr.serialize_g(y), sr.serialize_f(chal), sr.serialize_f(res)
         for i in range(self.n):
-            send(i, (yb, chalb, resb))
+            send(i, (yb, chalb, resb, r_exps_row))
 
         pk_shares = []
         while True:
             (sender, msg) = await recv()
-            yb, chalb, resb = msg
+            yb, chalb, resb, r_exp_sender_row = msg
             y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
             
             # TODO(@sourav): FIXME!! IMPORTANT to add this verification
@@ -321,6 +393,12 @@ class ADKG:
             if len(pk_shares) > self.deg:
                 break
         pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
+
+        mks = set() # master key set only for testing purposes
+        for ks in  rbc_values:
+            if ks is not None:
+                mks = mks.union(set(list(ks)))
+        
         return (mks, secret, pk)
 
     async def run_adkg(self, start_time):
@@ -336,8 +414,9 @@ class ADKG:
         logging.info(f"ACSS time: {(acss_time)}")
         key_proposal = list(acss_outputs.keys())
         create_acs_task = asyncio.create_task(self.agreement(key_proposal, acss_outputs, acss_signal))
-        acs, key_task, work_tasks = await create_acs_task
+        acs, pre_key_task, key_task, work_tasks = await create_acs_task
         await acs
+        await pre_key_task
         output = await key_task
         adkg_time = time.time()-start_time
         self.benchmark_logger.info("ADKG time2: %f", adkg_time)

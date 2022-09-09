@@ -24,7 +24,7 @@ def test_benchmark_hyp(benchmark, t, deg, n):
     phi = poly.random(deg, secret)
     evals = [phi(i+1) for i in range(deg)]
     commits = [g**evals[i] for i in range(deg)]
-    matrix = [[i+1**j for j in range(deg)] for i in range(n)]
+    matrix = [[ZR(i+1)**j for j in range(deg)] for i in range(n)]
 
     benchmark(_compute_commit, g, h, t, deg, n, commits, matrix)
 

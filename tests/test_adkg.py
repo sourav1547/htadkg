@@ -21,7 +21,7 @@ def get_avss_params(n, G1):
 
 @mark.asyncio
 async def test_adkg(test_router):
-    t = 1
+    t = 3
     deg = 2*t
     n = 3 * t + 1
 
@@ -69,3 +69,32 @@ async def test_adkg(test_router):
     for node in mks_set:
         msk_sum = msk_sum + outputs[node][0]
     assert msk_sum == msk
+
+    def check_degree(claimed_degree, points):
+        dual_code = gen_dual_code(n, claimed_degree, poly)
+        check = dot(points, dual_code)
+        return check == ZR(0)
+
+    def gen_dual_code(n, degree, poly):
+        def get_vi(i, n):
+            out = ZR(1)
+            for j in range(1, n+1):
+                if j != i:
+                    out = out / (i-j)
+            return out
+        q = poly.random(n -degree -2)
+        q_evals = [q(i+1) for i in range(n)]
+        return [q_evals[i] * get_vi(i+1, n) for i in range(n)]
+    
+
+    def dot(a, b):
+        res = ZR(0)
+        for i in range(len(a)):
+            res = res + a[i][1]*b[i]
+        return res
+    
+    degrees = {}
+    for i in range(t, n):
+        degrees[i] = check_degree(i, shares)
+    
+    print(degrees)

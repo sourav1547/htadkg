@@ -228,7 +228,7 @@ class ACSS_HT:
         self.tagvars[tag]['all_shares_valid'] = self._handle_dealer_msgs(tag, dispersal_msg, (commits, ephkey), dealer_id)
 
         if self.tagvars[tag]['all_shares_valid']:
-            shares = self.tagvars[tag]['shares']
+            shares = {'msg': self.tagvars[tag]['shares'][0], 'rand':self.tagvars[tag]['shares'][1]}
             commitments = self.tagvars[tag]['commitments']
             self.output_queue.put_nowait((dealer_id, avss_id, shares, commitments))
             output = True

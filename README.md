@@ -1,7 +1,4 @@
-# Prototype implementation of Asynchronous Distributed Key Generation
-
-This library implements the Asynchronous Distributed Key Generation protocol from the paper
-https://eprint.iacr.org/2021/1591 
+# Prototype implementation of High-threshold Asynchronous Distributed Key Generation
 
 NOTE: This is a research implementation and may contain security issues. Do not use this for production.
 

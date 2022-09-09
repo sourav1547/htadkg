@@ -2,12 +2,14 @@ from adkg.polynomial import polynomials_over
 from adkg.utils.poly_misc import interpolate_g1_at_x
 from adkg.utils.misc import wrap_send, subscribe_recv
 import asyncio
-import hashlib
-import time
+import hashlib, time, math
 import logging
 from adkg.utils.serilization import Serial
 from adkg.utils.bitmap import Bitmap
 from adkg.acss_ht import ACSS_HT
+
+from adkg.broadcast.tylerba import tylerba
+from adkg.broadcast.optqrbc import optqrbc
 
 class ADKGMsgType:
     ACSS = "A"
@@ -50,6 +52,7 @@ class ADKG:
     def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, ZR, G1):
         self.public_keys, self.private_key, self.g, self.h = (public_keys, private_key, g, h)
         self.n, self.t, self.deg, self.my_id = (n, t, deg, my_id)
+        self.sc = math.ceil(deg/t) + 1
         self.send, self.recv, self.pc, self.ZR, self.G1 = (send, recv, pc, ZR, G1)
         self.poly = polynomials_over(self.ZR)
         self.poly.clear_cache() #FIXME: Not sure why we need this.
@@ -86,31 +89,26 @@ class ADKG:
     def __exit__(self, type, value, traceback):
         return self
 
-    async def acss_step(self, outputs, value, acss_signal):
-        #todo, need to modify send and recv
-        # Need different send and recv instances for different component of the code.
+    async def acss_step(self, outputs, values, acss_signal):
         acsstag = ADKGMsgType.ACSS
         acsssend, acssrecv = self.get_send(acsstag), self.subscribe_recv(acsstag)
-        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.my_id, acsssend, acssrecv, self.pc)
-
+        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.sc, self.my_id, acsssend, acssrecv, self.pc)
         self.acss_tasks = [None] * self.n
-        # value =[ZR.rand()]
         for i in range(self.n):
             if i == self.my_id:
-                self.acss_tasks[i] = asyncio.create_task(self.acss.avss(0, values=value))
+                self.acss_tasks[i] = asyncio.create_task(self.acss.avss(0, values=values))
             else:
                 self.acss_tasks[i] = asyncio.create_task(self.acss.avss(0, dealer_id=i))
 
         while True:
-                (dealer, _, share, commitments) = await self.acss.output_queue.get()
-                outputs[dealer] = [share, commitments]
-                # if len(outputs) >= self.n - self.t:
-                if len(outputs) > self.t:
-                    # print("Player " + str(self.my_id) + " Got shares from: " + str([output for output in outputs]))
-                    acss_signal.set()
+            (dealer, _, shares, commitments) = await self.acss.output_queue.get()
+            outputs[dealer] = [shares, commitments]
+            if len(outputs) >= self.n - self.t:
+                # print("Player " + str(self.my_id) + " Got shares from: " + str([output for output in outputs]))
+                acss_signal.set()
 
-                if len(outputs) == self.n:
-                    return    
+            if len(outputs) == self.n:
+                return    
 
     async def commonsubset(self, rbc_out, acss_outputs, acss_signal, rbc_signal, rbc_values, coin_keys, aba_in, aba_out):
         assert len(rbc_out) == self.n
@@ -173,10 +171,6 @@ class ADKG:
         rbc_signal.set()
 
     async def agreement(self, key_proposal, acss_outputs, acss_signal):
-        from adkg.broadcast.tylerba import tylerba
-        # from adkg.broadcast.qrbc import qrbc
-        from adkg.broadcast.optqrbc import optqrbc
-
         aba_inputs = [asyncio.Queue() for _ in range(self.n)]
         aba_outputs = [asyncio.Queue() for _ in range(self.n)]
         rbc_outputs = [asyncio.Queue() for _ in range(self.n)]
@@ -294,13 +288,13 @@ class ADKG:
                 await acss_signal.wait()
                 acss_signal.clear()
         
-        secret = 0
+        secret = self.ZR(0)
         agg_x = [self.G1.identity() for _ in range(self.n)]
         for k in mks:
-            secret = secret + acss_outputs[k][0][0]
+            secret = secret + acss_outputs[k][0][0][0]
             # Computing aggregated commitments
-            for i in range(self.n):
-                agg_x[i] = agg_x[i]*acss_outputs[k][1][i]
+            for i in range(self.t):
+                agg_x[i] = agg_x[i]*acss_outputs[k][1][0][i]
         
         x = self.g**secret
         y = self.h**secret
@@ -321,8 +315,9 @@ class ADKG:
             yb, chalb, resb = msg
             y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
             
-            if cp.dleq_verify(agg_x[sender], y, chal, res):
-                pk_shares.append([sender+1, y])
+            # TODO(@sourav): FIXME!! IMPORTANT to add this verification
+            # if cp.dleq_verify(agg_x[sender], y, chal, res):
+            pk_shares.append([sender+1, y])
             if len(pk_shares) > self.deg:
                 break
         pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
@@ -333,8 +328,8 @@ class ADKG:
         acss_signal = asyncio.Event()
 
         acss_start_time = time.time()
-        value =[self.ZR.rand()]
-        self.acss_task = asyncio.create_task(self.acss_step(acss_outputs, value, acss_signal))
+        values =[self.ZR.rand() for _ in range(self.sc)]
+        self.acss_task = asyncio.create_task(self.acss_step(acss_outputs, values, acss_signal))
         await acss_signal.wait()
         acss_signal.clear()
         acss_time = time.time() - acss_start_time
@@ -349,4 +344,4 @@ class ADKG:
         logging.info(f"ADKG time: {(adkg_time)}")
         await asyncio.gather(*work_tasks)
         mks, sk, pk = output
-        self.output_queue.put_nowait((value[0], mks, sk, pk))
+        self.output_queue.put_nowait((values[0], mks, sk, pk))

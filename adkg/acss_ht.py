@@ -1,7 +1,6 @@
 import asyncio
 from collections import defaultdict
 from pickle import dumps, loads
-import math
 import re
 from pypairing import ZR
 from adkg.polynomial import polynomials_over
@@ -30,12 +29,12 @@ class HbAVSSMessageType:
 class ACSS_HT:
     #@profile
     def __init__(
-            self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, field=ZR
+            self, public_keys, private_key, g, h, n, t, deg, sc, my_id, send, recv, pc, field=ZR
     ):  # (# noqa: E501)
         self.public_keys, self.private_key = public_keys, private_key
         self.n, self.t, self.deg, self.my_id = n, t, deg, my_id
         self.g, self.h = g, h 
-        self.sc = math.ceil(deg/t) + 1
+        self.sc = sc 
         self.poly_commit = pc
 
         self.benchmark_logger = logging.LoggerAdapter(

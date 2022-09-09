@@ -6,47 +6,53 @@ Dependencies:
     based crypto)
 
 """
-from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, pair
+from pypairing import ZR, G1, G2, pair
 from base64 import encodebytes, decodebytes
 from operator import mul
 from functools import reduce
 
 # group = PairingGroup('SS512')
 # group = PairingGroup('MNT159')
-group = PairingGroup("MNT224")
+# group = PairingGroup("MNT224")
 
 
 def serialize(g):
     """ """
+    return None
     # Only work in G1 here
-    return decodebytes(group.serialize(g)[2:])
+    return decodebytes(g.serialize()[2:])
 
 
 def deserialize0(g):
     """ """
     # Only work in G1 here
-    return group.deserialize(b"0:" + encodebytes(g))
+    return None
+    # return group.deserialize(b"0:" + encodebytes(g))
 
 
 def deserialize1(g):
     """ """
     # Only work in G1 here
-    return group.deserialize(b"1:" + encodebytes(g))
+    # return group.deserialize(b"1:" + encodebytes(g))
 
 
 def deserialize2(g):
     """ """
     # Only work in G1 here
-    return group.deserialize(b"2:" + encodebytes(g))
+    # return group.deserialize(b"2:" + encodebytes(g))
 
 
-g1 = group.hash("geng1", G1)
-g1.initPP()
+# g1 = group.hash("geng1", G1)
+# g1.initPP()
+g1 = G1.rand()
 # g2 = g1
-g2 = group.hash("geng2", G2)
-g2.initPP()
-ZERO = group.random(ZR, seed=59) * 0
-ONE = group.random(ZR, seed=60) * 0 + 1
+# g2 = group.hash("geng2", G2)
+# g2.initPP()
+g1 = G1.rand()
+ZERO = ZR(0)
+ONE = ZR(1)
+# ZERO = group.random(ZR, seed=59) * 0
+# ONE = group.random(ZR, seed=60) * 0 + 1
 
 
 def polynom_eval(x, coefficients):
@@ -107,7 +113,8 @@ class TBLSPublicKey(object):
 
     def hash_message(self, m):
         """ """
-        return group.hash(m, G1)
+        # return group.hash(m, G1)
+        return G1.hash(m)
 
     def verify_share(self, sig, i, h):
         """ """
@@ -173,9 +180,12 @@ def dealer(players=10, k=5, seed=None):
     """ """
     # Random polynomial coefficients
     if seed is not None:
-        a = [group.random(ZR, seed=seed + i) for i in range(k)]
+        # a = [group.random(ZR, seed=seed + i) for i in range(k)]
+        a = [ZR.rand(b'i') for i in range(k)]
     else:
-        a = group.random(ZR, count=k)
+        # a = group.random(ZR, count=k)
+        a = [ZR.rand() for i in range(k)]
+
     assert len(a) == k
     secret = a[0]
 

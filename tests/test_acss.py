@@ -3,9 +3,9 @@ from pytest import mark
 from random import randint
 from adkg.polynomial import polynomials_over
 from adkg.acss_ht import ACSS_HT
-#from adkg.mpc import TaskProgramRunner
 from adkg.utils.misc import print_exception_callback
 import asyncio
+import math
 
 
 def get_avss_params(n, t):
@@ -24,6 +24,7 @@ async def test_hbacss0(test_router):
     t = 1
     deg = 2*t
     n = 3 * t + 1
+    sc = math.ceil(deg/t) + 1
 
     g, h, pks, sks = get_avss_params(n, t)
     sends, recvs, _ = test_router(n, maxdelay=0.001)
@@ -36,7 +37,7 @@ async def test_hbacss0(test_router):
     shares = [None] * n
     hbavss_list = [None] * n
     for i in range(n):
-        hbavss = ACSS_HT(pks, sks[i], g, h, n, t, deg, i, sends[i], recvs[i], pc, ZR)
+        hbavss = ACSS_HT(pks, sks[i], g, h, n, t, deg, sc, i, sends[i], recvs[i], pc, ZR)
         hbavss_list[i] = hbavss
         if i == dealer_id:
             avss_tasks[i] = asyncio.create_task(hbavss.avss(0, values=values))

@@ -1,4 +1,4 @@
-from pypairing import ZR, G1
+from pypairing import ZR, G1, blsmultiexp as multiexp
 # from pypairing import Curve25519ZR as ZR, Curve25519G as G1
 
 class PolyCommitFeldman:
@@ -9,11 +9,13 @@ class PolyCommitFeldman:
         return [self.g ** coeff for coeff in phi.coeffs]
 
     def verify_eval(self, c, i, phi_at_i, *args):
-        exp = ZR(1)
-        lhs = G1.identity()
-        for j in range(len(c)):
-            lhs *= c[j]**exp
-            exp *= i
+        powers = [ZR(i**j) for j in range(len(c))]
+        lhs = multiexp(c, powers)
+        # exp = ZR(1)
+        # lhs = G1.identity()
+        # for j in range(len(c)):
+        #     lhs *= c[j]**exp
+        #     exp *= i
         return lhs == self.g ** phi_at_i
 
     def create_witness(*args):

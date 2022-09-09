@@ -1,6 +1,6 @@
+from adkg.poly_commit_hybrid import PolyCommitHybrid
 from pytest import mark
 from adkg.polynomial import polynomials_over
-from adkg.poly_commit_feldman import PolyCommitFeldman
 from adkg.symmetric_crypto import SymmetricCrypto
 from adkg.utils.serilization import serialize_g, deserialize_g, serialize_gs, deserialize_gs, deserialize_f
 import hashlib
@@ -32,7 +32,7 @@ def test_benchmark_acss_dealer(benchmark, t, p, n):
     value = field.rand()
     poly = polynomials_over(field)
     g, h, pks, sks = get_avss_params(n, t)
-    pc = PolyCommitFeldman(g)
+    pc = PolyCommitHybrid(g,h)
     benchmark(_get_dealer_msg, [value], t, n, poly, pks, pc, g, field)
 
 @mark.parametrize(
@@ -46,7 +46,7 @@ def test_benchmark_hybrid_haven_receiver(benchmark, t, p, n):
     value = field.rand()
     poly = polynomials_over(field)
     g, h, pks, sks = get_avss_params(n, t)
-    pc = PolyCommitFeldman(g)
+    pc = PolyCommitHybrid(g)
     msgs = _get_dealer_msg([value], t, n, poly, pks, pc, g, field)
     benchmark( _handle_dealer_msg, msgs, t, 0, pc, sks[0])
 

@@ -142,6 +142,7 @@ async def optqrbc(sid, pid, n, f, leader, predicate, input, output, send, receiv
     committed = False
 
     while True:  # main receive loop
+        try:
             sender, msg = await receive()
             if msg[0] == RBCMsgType.PROPOSE and leader_hash is None:
                 (_, leader_msg) = msg
@@ -158,7 +159,7 @@ async def optqrbc(sid, pid, n, f, leader, predicate, input, output, send, receiv
                     if leader_hash == committed_hash:
                         broadcast((RBCMsgType.TERMINATE, 0))
                     
-            if msg[0] == RBCMsgType.ECHO:
+            elif msg[0] == RBCMsgType.ECHO:
                 (_, _digest) = msg
                 if sender in echo_senders:
                     # Received redundant ECHO message from the same sender
@@ -247,3 +248,5 @@ async def optqrbc(sid, pid, n, f, leader, predicate, input, output, send, receiv
                         committed = True
                         output(reconstructed_msg)  
                         broadcast((RBCMsgType.TERMINATE, 0))
+        except Exception as e:
+            print(e)

@@ -10,3 +10,4 @@ data/
 tests/.pytest.log
 .dockerignore
 data/
+aws/aws-config.json

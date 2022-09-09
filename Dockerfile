@@ -22,7 +22,7 @@
 # This should contain all setup required by all other targets, such as environment
 # variables, and essential apt dependencies.
 ##
-FROM python:3.7.3-slim AS base
+FROM python:3.7.13-slim AS base
 
 # Allows for log messages to be immediately dumped to the 
 # stream instead of being buffered.
@@ -71,11 +71,10 @@ RUN pip install \
     psutil \
     pycrypto \
     pyzmq \
-    matplotlib \
     zfec \
     uvloop \
-    reedsolo \
-    line_profiler
+    numpy \
+    reedsolo
 
 # This is needed otherwise the build for the power sum solver will fail.
 # This is a known issue in the version of libflint-dev in apt.
@@ -117,22 +116,22 @@ RUN make install
 
 # Install better pairing
 # Creates dependencies in /usr/local/include/pbc and /usr/local/lib
-WORKDIR /
-RUN curl -k -so - https://crypto.stanford.edu/pbc/files/pbc-0.5.14.tar.gz | tar xzvf - 
-WORKDIR /pbc-0.5.14/
-RUN ./configure
-RUN make
-RUN make install
+#WORKDIR /
+#RUN curl -k -so - https://crypto.stanford.edu/pbc/files/pbc-0.5.14.tar.gz | tar xzvf - 
+#WORKDIR /pbc-0.5.14/
+#RUN ./configure
+#RUN make
+#RUN make install
 
 # Install charm
 # Creates /charm/dist/Charm_Crypto...x86_64.egg, which gets copied into the venv
 # /opt/venv/lib/python3.7/site-packages/Charm_crypto...x86_64.egg
-WORKDIR /
-RUN git clone https://github.com/JHUISI/charm.git 
-WORKDIR /charm
-RUN git reset --hard be9587ccdd4d61c591fb50728ebf2a4690a2064f
-RUN ./configure.sh
-RUN make install 
+#WORKDIR /
+#RUN git clone https://github.com/JHUISI/charm.git 
+#WORKDIR /charm
+#RUN git reset --hard be9587ccdd4d61c591fb50728ebf2a4690a2064f
+#RUN ./configure.sh
+#RUN make install 
 
 # Copy pairing from build context and install it
 COPY pairing/ pairing/
@@ -199,8 +198,6 @@ RUN echo "alias cls=\"clear && printf '\e[3J'\"" >> ~/.bashrc
 
 # If you're testing out apt dependencies, put them here
 RUN apt-get install -y --no-install-recommends \
-    # nodejs \
-    # npm \
     tmux \
     vim
 
@@ -213,5 +210,5 @@ RUN pip install -e .['dev']
 FROM pre-dev AS dev
 COPY . .
 
-# RUN pip install debugpy
-# ENTRYPOINT [ "python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "-m"]
+RUN pip install debugpy
+ENTRYPOINT [ "python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "-m"]

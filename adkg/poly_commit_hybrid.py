@@ -1,52 +1,69 @@
-# from pypairing import ZR, G1
-from adkg.poly_commit_bulletproof_blind import PolyCommitBulletproofBlind
-from adkg.poly_commit_feldman import PolyCommitFeldman
-from pypairing import Curve25519ZR as ZR, Curve25519G as G1
-from adkg.proofs import dleq_prove, dleq_verify
+from pypairing import ZR, G1, blsmultiexp as multiexp
+# from pypairing import Curve25519ZR as ZR, Curve25519G as G1
+
+# Implements hybrid between Feldman and Pedersen polynomial commitment. 
+
+class PolyCommitHybrid:
+    def __init__(self, crs):
+        self.g, self.h = crs
+
+    def commit(self, phi, phi_hat=None):
+        if phi_hat is None:
+            return [self.g ** coeff for coeff in phi.coeffs]
+
+        return [multiexp([self.g, self.h], [phi.coeffs[i], phi_hat.coeffs[i]]) for i in range(len(phi.coeffs))]
+
+    def verify_eval(self, c, i, phi_at_i, phi_hat_at_i=None):
+        powers = [ZR(i**j) for j in range(len(c))]
+        lhs = multiexp(c, powers)
+        if phi_hat_at_i is None:
+            return lhs == self.g ** phi_at_i
+        return lhs == multiexp([self.g, self.h],[phi_at_i, phi_hat_at_i])
 
 
-class PolyCommitHybrid(PolyCommitFeldman, PolyCommitBulletproofBlind):
-    def __init__(self, crs=None, degree_max=33):
-        PolyCommitBulletproofBlind.__init__(self, crs, degree_max)
+    def create_witness(*args):
+        return None
 
-    def commit(self, phi, r):
-        bp, feldman, proofs = [], [], []
-        for i in range(len(phi.coeffs)):
-            bp.append(self.gs[i] ** phi.coeffs[i])
-            feldman.append(self.gs[0] ** phi.coeffs[i])
-            proofs.append(dleq_prove(self.gs[i], self.gs[0], bp[i], feldman[i], phi.coeffs[i]))
-        return [bp, feldman, proofs]
-
-    def verify_commit(self, c):
-        bp, feldman, proofs = c
-        if len(bp) != len(feldman) or len(bp) != len(proofs):
-            return False
-        for i in range(len(bp)):
-            if not dleq_verify(self.gs[i], self.gs[0], bp[i], feldman[i], proofs[i]):
+    def batch_create_witness(self, c, phi, n, *args):
+        return [None] * n
+    
+    def double_batch_create_witness(self, cs, phis, n, *args):
+        return [[None] * len(phis)] * n
+    
+    def batch_verify_eval(self, cs, i, phis_at_i, *args):
+        for j in range(len(cs)):
+            if not self.verify_eval(cs[j], i, phis_at_i[j]):
                 return False
         return True
+    
+    def preprocess(self, level=8):
+        self.g.preprocess(level)
 
-    def create_witness(self, phi, i, r):
-        return PolyCommitFeldman.create_witness(self, phi, c, i, r)
+    #homomorphically add commitments
+    def commit_add(self, a, b):
+        if len(a) > len(b):
+            longer = a
+            shorter = b
+        else:
+            longer = b
+            shorter = a
+        #the **1 is necessary to create a new copy and avoid dumb memory bugs
+        out = [entry ** 1 for entry in longer]
+        for i in range(len(shorter)):
+            out[i] *=  shorter[i]
+        return out
+    
+    def commit_sub(self, a, b):
+        if len(a) > len(b):
+            longer = a
+            shorter = [entry**(-1) for entry in b]
+        else:
+            longer = [entry**(-1) for entry in b]
+            shorter = a
+        out = [entry ** 1 for entry in longer]
+        for i in range(len(shorter)):
+            out[i] *=  shorter[i]
+        return out
 
-    def batch_create_witness(self, c, phi, n, r):
-        return PolyCommitFeldman.batch_create_witness(self, phi, c, n, r)
-
-    def double_batch_create_witness(self, cs, phis, n, r):
-        return PolyCommitFeldman.double_batch_create_witness(self, cs, phis, n, r)
-
-    def verify_eval(self, c, i, phi_at_i, witness):
-        bplist, feldmanlist, _ = c
-        return PolyCommitFeldman.verify_eval(self, feldmanlist, i, phi_at_i, witness)
-
-
-    # Degree specification enables degree enforcement (will return false if polynomial is not of specified degree)
-    def batch_verify_eval(self, cs, i, phis_at_i, witness, degree=None):
-        feldmancoms = [c[1] for c in cs]
-        return PolyCommitFeldman.batch_verify_eval(self, feldmancoms, i, phis_at_i, witness, degree)
-
-    def preprocess_prover(self, level=8):
-        PolyCommitBulletproofBlind.preprocess_prover(self, level)
-
-    def preprocess_verifier(self, level=8):
-        PolyCommitBulletproofBlind.preprocess_verifier(self, level)
+    def get_secret_commit(self, c):
+        return c[0]

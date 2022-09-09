@@ -1,6 +1,6 @@
+from adkg.poly_commit_hybrid import PolyCommitHybrid
 from pytest import mark
 from adkg.polynomial import polynomials_over
-from adkg.poly_commit_feldman import PolyCommitFeldman
 from adkg.adkg import adkg
 import asyncio
 
@@ -22,7 +22,7 @@ def test_benchmark_adkg(test_router, benchmark, t):
     sends, recvs, _ = test_router(n, maxdelay=0.001)
 
     g, h, pks, sks = get_avss_params(n, t)
-    pc = PolyCommitFeldman(g)
+    pc = PolyCommitHybrid(g,h)
     
     params = (sends, recvs, t, n, g, h, pks, sks, pc)
 

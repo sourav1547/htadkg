@@ -309,6 +309,13 @@ class ADKG:
     async def pre_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal, pre_key_values, pre_key_signal):
         await rbc_signal.wait()
         rbc_signal.clear()
+
+        def dot(a, b):
+            res = self.ZR(0)
+            for i in range(len(a)):
+                res = res + a[i]*b[i]
+            return res
+
         
         mks = set() # master key set
         for ks in  rbc_values:
@@ -324,9 +331,12 @@ class ADKG:
         # share of the master secret
         z_0 = self.ZR(0)
         com_0 = self.G1.identity()
+        agg_commits = [self.G1.identity()]*(self.t+1)
         for node in mks:
             z_0 = z_0 + acss_outputs[node]['shares']['msg'][0]
             com_0 = com_0*acss_outputs[node]['commits'][0][0]
+            for i in range(self.t+1):
+                agg_commits[i] = agg_commits[i]*acss_outputs[node]['commits'][0][i]
 
         secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
@@ -357,16 +367,35 @@ class ADKG:
                 commits_row_coeffs[i] = self.multiexp(pre_commit, matrix[self.my_id-(self.t+1)])
             commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
         else:
+            # Computing the lagrange coefficents
+            lambdas = [None]*(self.deg+1)
+            for i in range(self.deg+1):
+                c = self.ZR(1)
+                for ii in range(self.deg + 1):
+                    if i == ii:
+                        continue 
+                    c = c*self.ZR(self.my_id+1-ii)/self.ZR(i-ii)
+                lambdas[i] = c
+            
+            scalars = [None]*self.n
+            for i in range(self.n):
+                temp_coeffs = [matrix[j][i] for j in range(self.t+1)]
+                scalars[i] = dot(temp_coeffs, lambdas[1:self.t+2])
+            
+            for i in range(self.t+1):
+                pre_commit = [commits[0][node][i] for node in range(self.n)]
+                commits_row_coeffs[i] = self.multiexp(pre_commit, scalars)
+            
+            for i in range(self.n):
+                temp_coeffs = [matrix[j][i] for j in range(self.deg - (self.t+1))]
+                scalars[i] = dot(temp_coeffs, lambdas[self.t+2:self.deg+1])
+
             for i in range(self.t+1):
                 pre_commit = [commits[1][node][i] for node in range(self.n)]
-                # TODO(@sourav) to fix this.
-
-
-        def dot(a, b):
-            res = self.ZR(0)
-            for i in range(len(a)):
-                res = res + a[i]*b[i]
-            return res
+                commits_row_coeffs[i] = commits_row_coeffs[i]*self.multiexp(pre_commit, scalars)
+            
+            commits_row_coeffs = [commits_row_coeffs[i]*(agg_commits[i]**lambdas[0]) for i in range(self.t+1)]
+            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
 
         z_shares = {0:z_0}
         r_shares = {0:self.ZR(0)}
@@ -408,12 +437,9 @@ class ADKG:
             chal, resp = sender_proof_r_exp
             sender_r_exp = sender_r_exps[self.my_id] 
             valid_pok = pok.pok_verify(sender_r_exp, chal, resp)
+            valid_r_exp = sender_r_exp*(self.g**sk_share) == commits_row[sender]
 
-
-            valid_r_exp = True
-            if self.my_id < self.deg:
-                valid_r_exp = sender_r_exp*(self.g**sk_share) == commits_row[sender]
-            if not (valid_pok and valid_r_exp) and self.my_id <= self.deg:
+            if not (valid_pok and valid_r_exp):
                 continue
 
             sk_shares.append([sender+1, sk_share])

@@ -20,7 +20,7 @@ def get_avss_params(n, G1):
 
 @mark.asyncio
 async def test_adkg(test_router):
-    t = 1
+    t = 3
     deg = 2*t
     n = 3 * t + 1
 

@@ -24,3 +24,7 @@ def interpolate_g1_at_x(coords, x, G1, ZR, order=-1):
     for i in range(order):
         out *= (sortedcoords[i][1] ** (lagrange_at_x(s, xs[i], x, ZR)))
     return out
+
+def evaluate_g1_at_x(coeffs, x, ZR, multiexp):
+    powers = [ZR(x**j) for j in range(len(coeffs))]
+    return multiexp(coeffs, powers)

@@ -160,8 +160,7 @@ class ACSS_HT:
             multicast((HbAVSSMessageType.OK, ""))
     
     def decode_proposal(self, proposal):
-        # TODO(@sourav): Update this decode proposal function to handle multiple commitments
-        # NOTE: Keep the implementation generic so that we can easily swap out the pedersen commit
+        # TODO(@sourav): To optimize this
         g_size = 48
         c_size = 64
 
@@ -272,9 +271,6 @@ class ACSS_HT:
                 break
     #@profile
     def _get_dealer_msg(self, values, n):
-        # TODO(@sourav): Change this to handle 3 secrets
-        # Probably we should make it generic in the number of secrets.
-        #
         # Sample B random degree-(t) polynomials of form φ(·)
         # such that each φ_i(0) = si and φ_i(j) is Pj’s share of si
         # The same as B (batch_size)
@@ -320,7 +316,6 @@ class ACSS_HT:
     
     #@profile
     def _handle_dealer_msgs(self, tag, dispersal_msg, rbc_msg, dealer_id):
-        # TODO(@sourav): Sample k secret, share one with Feldman and the remaining with Pedersen.
         commitments, ephemeral_public_key = rbc_msg
         shared_key = pow(ephemeral_public_key, self.private_key)
         self.tagvars[tag]['shared_key'] = shared_key
@@ -378,11 +373,8 @@ class ACSS_HT:
         logger.debug("[%d] Starting reliable broadcast", self.my_id)
 
         async def predicate(_m):
-            # TODO(@sourav): Fix this predicate message.
             dispersal_msg, commits, ephkey = self.decode_proposal(_m)
             return self.verify_proposal(dealer_id, dispersal_msg, commits, ephkey)
-
-        
         
         output = asyncio.Queue()
         asyncio.create_task(

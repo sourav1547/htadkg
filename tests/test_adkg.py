@@ -5,7 +5,7 @@ from adkg.adkg import ADKG
 import asyncio
 import uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-from pypairing import ZR, G1
+from pypairing import ZR, G1, blsmultiexp as multiexp
 # from pypairing import Curve25519ZR as ZR, Curve25519G as G1
     
 import time
@@ -35,7 +35,7 @@ async def test_adkg(test_router):
     start_time = time.time()
 
     for i in range(n):
-        dkg = ADKG(pks, sks[i], g, h, n, t, deg, i, sends[i], recvs[i], pc, ZR, G1)
+        dkg = ADKG(pks, sks[i], g, h, n, t, deg, i, sends[i], recvs[i], pc, multiexp, ZR, G1)
         dkg_list[i] = dkg
         dkg_tasks[i] = asyncio.create_task(dkg.run_adkg(start_time))
     

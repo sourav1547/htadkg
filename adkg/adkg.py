@@ -1,5 +1,5 @@
 from adkg.polynomial import polynomials_over
-from adkg.utils.poly_misc import interpolate_g1_at_x
+from adkg.utils.poly_misc import evaluate_g1_at_x, interpolate_g1_at_x
 from adkg.utils.misc import wrap_send, subscribe_recv
 import asyncio
 import hashlib, time, math
@@ -38,9 +38,7 @@ class CP:
         a1 = (x**chal)*(self.g**res)
         a2 = (y**chal)*(self.h**res)
         eLocal = self.dleq_derive_chal(x, a1, y, a2)
-        if eLocal == chal:
-            return True
-        return False
+        return eLocal == chal
 
     def dleq_prove(self, alpha, x, y):
         w = self.ZR.random()
@@ -49,12 +47,39 @@ class CP:
         e = self.dleq_derive_chal(x, a1, y, a2)
         return  e, w - e*alpha # return (challenge, response)
 
+class PoK:
+    def __init__(self, g, ZR):
+        self.g  = g
+        self.ZR = ZR
+
+    def pok_derive_chal(self, x, a):
+        commit = str(x)+str(a)
+        try:
+            commit = commit.encode()
+        except AttributeError:
+            pass 
+        # TODO: Convert the hash output to a field element.
+        hs =  hashlib.sha256(commit).digest() 
+        return self.ZR.hash(hs)
+
+    def pok_verify(self, x, chal, res):
+        a = (x**chal)*(self.g**res)
+        eLocal = self.pok_derive_chal(x, a)
+        return eLocal == chal
+
+    def pok_prove(self, alpha, x):
+        w = self.ZR.random()
+        a = self.g**w
+        e = self.pok_derive_chal(x, a)
+        return  e, w - e*alpha # return (challenge, response)
+    
 class ADKG:
-    def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, ZR, G1):
+    def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, multiexp, ZR, G1):
         self.public_keys, self.private_key, self.g, self.h = (public_keys, private_key, g, h)
         self.n, self.t, self.deg, self.my_id = (n, t, deg, my_id)
         self.sc = math.ceil(deg/t) + 1
         self.send, self.recv, self.pc, self.ZR, self.G1 = (send, recv, pc, ZR, G1)
+        self.multiexp = multiexp
         self.poly = polynomials_over(self.ZR)
         self.poly.clear_cache() #FIXME: Not sure why we need this.
         # Create a mechanism to split the `recv` channels based on `tag`
@@ -300,20 +325,44 @@ class ADKG:
 
         # share of the master secret
         z_0 = self.ZR(0)
+        com_0 = self.G1.identity()
         for node in mks:
             z_0 = z_0 + acss_outputs[node]['shares']['msg'][0]
+            com_0 = com_0*acss_outputs[node]['commits'][0][0]
 
         secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
+        commits = [[None]*self.n for _ in range(self.sc-1)]
         for idx in range(self.sc-1):
-            for node in mks:
-                secrets[idx][node] = acss_outputs[node]['shares']['msg'][idx+1]
-                randomness[idx][node] = acss_outputs[node]['shares']['msg'][idx]
+            for node in range(self.n):
+                if node in mks:
+                    secrets[idx][node] = acss_outputs[node]['shares']['msg'][idx+1]
+                    randomness[idx][node] = acss_outputs[node]['shares']['rand'][idx]
+                    commits[idx][node] = acss_outputs[node]['commits'][idx+1]
+                else:
+                    commits[idx][node] = [self.G1.identity() for _ in range(self.t+1)]
         
         matrix = [[self.ZR(i+1)**j for j in range(self.n)] for i in range(self.t+1)]
+        commits_zero = [[commits[idx][node][0] for node in range(self.n)] for idx in range(self.sc-1)]
 
-        z_shares = {0:z_0}
-        r_shares = {0:self.ZR(0)}
+        # TODO(@sourav), FIXME: Make this generic with respect to number of secrets
+        commits_row = []
+        commits_row_coeffs = [None]*(self.t+1)
+        if self.my_id < self.t+1:
+            for i in range(self.t+1):
+                pre_commit = [commits[0][node][i] for node in range(self.n)]
+                commits_row_coeffs[i] = self.multiexp(pre_commit, matrix[self.my_id])
+            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
+        elif self.my_id < self.deg:
+            for i in range(self.t+1):
+                pre_commit = [commits[1][node][i] for node in range(self.n)]
+                commits_row_coeffs[i] = self.multiexp(pre_commit, matrix[self.my_id-(self.t+1)])
+            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
+        else:
+            for i in range(self.t+1):
+                pre_commit = [commits[1][node][i] for node in range(self.n)]
+                # TODO(@sourav) to fix this.
+
 
         def dot(a, b):
             res = self.ZR(0)
@@ -321,40 +370,71 @@ class ADKG:
                 res = res + a[i]*b[i]
             return res
 
+        z_shares = {0:z_0}
+        r_shares = {0:self.ZR(0)}
+        self.com_keys = {0:com_0}
+
         for i in range(self.t+1):
             z_shares[i+1] = dot(matrix[i], secrets[0])
             r_shares[i+1] = dot(matrix[i], randomness[0])
+            self.com_keys[i+1]= self.multiexp(commits_zero[0], matrix[i])
         for i in range(self.t+1, self.deg):
             z_shares[i+1] = dot(matrix[i-(self.t+1)], secrets[1])
             r_shares[i+1] = dot(matrix[i-(self.t+1)], randomness[1])
-        
+            self.com_keys[i+1]= self.multiexp(commits_zero[1], matrix[i-(self.t+1)])    
         for i in range(self.deg, self.n):
             z_shares[i+1] = self.poly.interpolate_at( list(z_shares.items()), i+1)
             r_shares[i+1] = self.poly.interpolate_at(list(r_shares.items()), i+1)
+            self.com_keys[i+1] = interpolate_g1_at_x(list(self.com_keys.items()), i+1, self.G1, self.ZR)
         
         r_exps = [self.h**r_shares[i+1] for i in range(self.n)]
+        pok = PoK(self.h, self.ZR)
+        proof_r_exps = [pok.pok_prove(r_shares[i+1], r_exps[i]) for i in range(self.n)]
 
-        
         # Sending PREKEY messages
         keytag = ADKGMsgType.PREKEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
 
         for i in range(self.n):
-            send(i, (z_shares[i+1], r_exps))
-        
+            send(i, (z_shares[i+1], r_exps, proof_r_exps[i]))
         
         sk_shares = []
         r_exp_shares = []
+        pre_key_values['r_exp_row'] = [None]*self.n
+
         while True:
             # TODO(@sourav) FIXME!! Important to add validation checks
             (sender, msg) = await recv()
-            sk_share, sender_r_exp = msg
+            sk_share, sender_r_exps, sender_proof_r_exp = msg
+
+            # Proof of Knowledge verification of h^{r_{i,j}}
+            chal, resp = sender_proof_r_exp
+            sender_r_exp = sender_r_exps[self.my_id] 
+            valid_pok = pok.pok_verify(sender_r_exp, chal, resp)
+
+
+            valid_r_exp = True
+            if self.my_id < self.deg:
+                valid_r_exp = sender_r_exp*(self.g**sk_share) == commits_row[sender]
+            if not (valid_pok and valid_r_exp) and self.my_id <= self.deg:
+                continue
+
             sk_shares.append([sender+1, sk_share])
-            r_exp_shares.append([sender+1, sender_r_exp[sender]])
-            pre_key_values['r_exps'][sender] = sender_r_exp
+            r_exp_shares.append([sender+1, sender_r_exp])
+            pre_key_values['r_exps'][sender] = sender_r_exps
+            pre_key_values['r_exp_row'][sender] = sender_r_exp
             if len(sk_shares) == self.t+1:
+                # Interpolating the share
                 pre_key_values['share'] =  self.poly.interpolate_at(sk_shares, 0)
                 pre_key_values['my_r_exp'] = interpolate_g1_at_x(r_exp_shares, 0, self.G1, self.ZR)
+
+                # Computing the rest of the h^r
+                for node in range(self.n):
+                    if pre_key_values['r_exp_row'][node] is None:
+                        pre_key_values['r_exp_row'][node] = interpolate_g1_at_x(r_exp_shares, node+1, self.G1, self.ZR)
+                pre_key_signal.set()
+            elif len(sk_shares) > self.t+1:
+                pre_key_signal.clear()
                 pre_key_signal.set()
             
             if len(sk_shares) == self.n:
@@ -371,7 +451,6 @@ class ADKG:
         y = self.h**secret
         cp = CP(self.g, self.h, self.ZR)
         chal, res = cp.dleq_prove(secret, x, y)
-        r_exps_row = [None]*self.n
 
         keytag = ADKGMsgType.KEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
@@ -379,19 +458,43 @@ class ADKG:
         sr = Serial(self.G1)
         yb, chalb, resb = sr.serialize_g(y), sr.serialize_f(chal), sr.serialize_f(res)
         for i in range(self.n):
-            send(i, (yb, chalb, resb, r_exps_row))
+            send(i, (yb, chalb, resb, pre_key_values['r_exp_row']))
+
+        async def process_backlog():
+            await pre_key_signal.wait()
+            pre_key_signal.clear()
+            # 1. Iterate through backlog senders.
+            # 2. If any of them satisfy the criteria, then append it to accepted list
+            # 3. If the length of the appended list longer than, derive public key and return.
+
 
         pk_shares = []
+        back_log_senders = {}
         while True:
             (sender, msg) = await recv()
             yb, chalb, resb, r_exp_sender_row = msg
             y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
+
+            # TODO(@sourav): Also check degree of r_exp_sender_row
+            match_count = 0
+            for node in range(self.n):
+                if pre_key_values['r_exps'][node][sender] == r_exp_sender_row[node]:
+                    match_count = match_count+1
             
-            # TODO(@sourav): FIXME!! IMPORTANT to add this verification
-            # if cp.dleq_verify(agg_x[sender], y, chal, res):
-            pk_shares.append([sender+1, y])
-            if len(pk_shares) > self.deg:
-                break
+            if match_count < 2*self.t + 1:
+                # Add to backlog and continue
+                back_log_senders[sender] = msg
+                # continue
+            
+            h_r_sender = interpolate_g1_at_x([(i+1, r_exp_sender_row[i]) for i in range(self.n)], 0, self.G1, self.ZR)
+            g_z_sender = self.com_keys[sender+1]*(h_r_sender**(-1))
+            
+            if cp.dleq_verify(g_z_sender, y, chal, res):
+                pk_shares.append([sender+1, y])
+                if len(pk_shares) > self.deg:
+                    break
+            else:
+                print("Failed verification")
         pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
 
         mks = set() # master key set only for testing purposes

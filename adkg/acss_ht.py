@@ -2,7 +2,6 @@ import asyncio
 from collections import defaultdict
 from pickle import dumps, loads
 import re
-from pypairing import ZR
 from adkg.polynomial import polynomials_over
 from adkg.symmetric_crypto import SymmetricCrypto
 from adkg.utils.misc import wrap_send, subscribe_recv
@@ -29,7 +28,7 @@ class HbAVSSMessageType:
 class ACSS_HT:
     #@profile
     def __init__(
-            self, public_keys, private_key, g, h, n, t, deg, sc, my_id, send, recv, pc, field=ZR
+            self, public_keys, private_key, g, h, n, t, deg, sc, my_id, send, recv, pc, field
     ):  # (# noqa: E501)
         self.public_keys, self.private_key = public_keys, private_key
         self.n, self.t, self.deg, self.my_id = n, t, deg, my_id
@@ -290,7 +289,7 @@ class ACSS_HT:
                 commitments[k] = self.poly_commit.commit(phi[k], None)
             else:
                 phi[k] = self.poly.random(self.t, values[k])
-                phi_hat[k] = self.poly.random(self.t, ZR.rand())
+                phi_hat[k] = self.poly.random(self.t, self.field.rand())
                 commitments[k] = self.poly_commit.commit(phi[k], phi_hat[k])
 
 

@@ -30,7 +30,6 @@ class CP:
             commit = commit.encode()
         except AttributeError:
             pass 
-        # TODO: Convert the hash output to a field element.
         hs =  hashlib.sha256(commit).digest() 
         return self.ZR.hash(hs)
 
@@ -58,7 +57,6 @@ class PoK:
             commit = commit.encode()
         except AttributeError:
             pass 
-        # TODO: Convert the hash output to a field element.
         hs =  hashlib.sha256(commit).digest() 
         return self.ZR.hash(hs)
 
@@ -118,7 +116,7 @@ class ADKG:
     async def acss_step(self, outputs, values, acss_signal):
         acsstag = ADKGMsgType.ACSS
         acsssend, acssrecv = self.get_send(acsstag), self.subscribe_recv(acsstag)
-        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.sc, self.my_id, acsssend, acssrecv, self.pc)
+        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.sc, self.my_id, acsssend, acssrecv, self.pc, self.ZR)
         self.acss_tasks = [None] * self.n
         for i in range(self.n):
             if i == self.my_id:
@@ -403,7 +401,6 @@ class ADKG:
         pre_key_values['r_exp_row'] = [None]*self.n
 
         while True:
-            # TODO(@sourav) FIXME!! Important to add validation checks
             (sender, msg) = await recv()
             sk_share, sender_r_exps, sender_proof_r_exp = msg
 
@@ -459,43 +456,64 @@ class ADKG:
         yb, chalb, resb = sr.serialize_g(y), sr.serialize_f(chal), sr.serialize_f(res)
         for i in range(self.n):
             send(i, (yb, chalb, resb, pre_key_values['r_exp_row']))
+        
+        self.threshold_pks = False
+        self.pk_shares = []
 
+        # Function to process back_logs
         async def process_backlog():
             await pre_key_signal.wait()
             pre_key_signal.clear()
-            # 1. Iterate through backlog senders.
-            # 2. If any of them satisfy the criteria, then append it to accepted list
-            # 3. If the length of the appended list longer than, derive public key and return.
 
+            for sender, msg in self.back_log_senders.items():
+                yb, chalb, resb, r_exp_sender_row = msg
+                y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
 
-        pk_shares = []
-        back_log_senders = {}
-        while True:
+                match_count = 0
+                for node in range(self.n):
+                    if pre_key_values['r_exps'][node][sender] == r_exp_sender_row[node]:
+                        match_count = match_count+1
+
+                h_r_sender = interpolate_g1_at_x([(i+1, r_exp_sender_row[i]) for i in range(self.n)], 0, self.G1, self.ZR)
+                g_z_sender = self.com_keys[sender+1]*(h_r_sender**(-1))
+            
+                if cp.dleq_verify(g_z_sender, y, chal, res):
+                    self.pk_shares.append([sender+1, y])
+                    if len(self.pk_shares) > self.deg:
+                        self.threshold_pks = True
+                        break
+
+        asyncio.create_task(process_backlog())
+        
+        self.back_log_senders = {}
+        while not self.threshold_pks:
             (sender, msg) = await recv()
             yb, chalb, resb, r_exp_sender_row = msg
             y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
 
-            # TODO(@sourav): Also check degree of r_exp_sender_row
+            # checking degree of the row sent by the node.
+            if not self.check_degree(self.t, r_exp_sender_row):
+                continue
+            
+            # Checking if the row sent by the node matches with large number of column elements
             match_count = 0
             for node in range(self.n):
                 if pre_key_values['r_exps'][node][sender] == r_exp_sender_row[node]:
                     match_count = match_count+1
             
+            # If not enough matches, then add to backlog and continue
             if match_count < 2*self.t + 1:
-                # Add to backlog and continue
-                back_log_senders[sender] = msg
-                # continue
+                self.back_log_senders[sender] = msg
+                continue
             
             h_r_sender = interpolate_g1_at_x([(i+1, r_exp_sender_row[i]) for i in range(self.n)], 0, self.G1, self.ZR)
             g_z_sender = self.com_keys[sender+1]*(h_r_sender**(-1))
             
             if cp.dleq_verify(g_z_sender, y, chal, res):
-                pk_shares.append([sender+1, y])
-                if len(pk_shares) > self.deg:
+                self.pk_shares.append([sender+1, y])
+                if len(self.pk_shares) > self.deg:
                     break
-            else:
-                print("Failed verification")
-        pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
+        pk =  interpolate_g1_at_x(self.pk_shares, 0, self.G1, self.ZR)
 
         mks = set() # master key set only for testing purposes
         for ks in  rbc_values:
@@ -503,6 +521,22 @@ class ADKG:
                 mks = mks.union(set(list(ks)))
         
         return (mks, secret, pk)
+    
+    def check_degree(self, claimed_degree, points):
+        dual_code = self.gen_dual_code(claimed_degree)
+        check = self.multiexp(points, dual_code)
+        return check == self.h**self.ZR(0)
+
+    def gen_dual_code(self, degree):
+        def get_vi(i, n):
+            out = self.ZR(1)
+            for j in range(1, n+1):
+                if j != i:
+                    out = out / (i-j)
+            return out
+        q = self.poly.random(self.n -degree -2)
+        q_evals = [q(i+1) for i in range(self.n)]
+        return [q_evals[i] * get_vi(i+1, self.n) for i in range(self.n)]
 
     async def run_adkg(self, start_time):
         acss_outputs = {}

@@ -1,24 +1,23 @@
-from pypairing import ZR, G1, blsmultiexp as multiexp
-# from pypairing import Curve25519ZR as ZR, Curve25519G as G1
-
 # Implements hybrid between Feldman and Pedersen polynomial commitment. 
 
 class PolyCommitHybrid:
-    def __init__(self, crs):
-        self.g, self.h = crs
+    def __init__(self, g, h, field, multiexp):
+        self.g, self.h = g, h
+        self.ZR = field
+        self.multiexp = multiexp
 
     def commit(self, phi, phi_hat=None):
         if phi_hat is None:
             return [self.g ** coeff for coeff in phi.coeffs]
 
-        return [multiexp([self.g, self.h], [phi.coeffs[i], phi_hat.coeffs[i]]) for i in range(len(phi.coeffs))]
+        return [self.multiexp([self.g, self.h], [phi.coeffs[i], phi_hat.coeffs[i]]) for i in range(len(phi.coeffs))]
 
     def verify_eval(self, c, i, phi_at_i, phi_hat_at_i=None):
-        powers = [ZR(i**j) for j in range(len(c))]
-        lhs = multiexp(c, powers)
+        powers = [self.ZR(i**j) for j in range(len(c))]
+        lhs = self.multiexp(c, powers)
         if phi_hat_at_i is None:
             return lhs == self.g ** phi_at_i
-        return lhs == multiexp([self.g, self.h],[phi_at_i, phi_hat_at_i])
+        return lhs == self.multiexp([self.g, self.h],[phi_at_i, phi_hat_at_i])
 
 
     def create_witness(*args):

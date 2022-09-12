@@ -11,6 +11,10 @@ from adkg.acss_ht import ACSS_HT
 from adkg.broadcast.tylerba import tylerba
 from adkg.broadcast.optqrbc import optqrbc
 
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.NOTSET)
+
 class ADKGMsgType:
     ACSS = "A"
     RBC = "R"
@@ -75,7 +79,7 @@ class ADKG:
     def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, multiexp, ZR, G1):
         self.public_keys, self.private_key, self.g, self.h = (public_keys, private_key, g, h)
         self.n, self.t, self.deg, self.my_id = (n, t, deg, my_id)
-        self.sc = math.ceil(deg/t) + 1
+        self.sc = math.ceil((deg+1)/(t+1)) + 1
         self.send, self.recv, self.pc, self.ZR, self.G1 = (send, recv, pc, ZR, G1)
         self.multiexp = multiexp
         self.poly = polynomials_over(self.ZR)
@@ -170,8 +174,7 @@ class ADKG:
 
         async def _recv_aba(j):
             aba_values[j] = await aba_out[j]()  # May block
-            # print pid, j, 'ENTERING CRITICAL'
-            # if sum(aba_values) >= self.n - self.t:
+
             if sum(aba_values) >= 1:
                 # Provide 0 to all other aba
                 for k in range(self.n):
@@ -295,18 +298,15 @@ class ADKG:
                 acss_signal,
                 rbc_values,
                 rbc_signal,
-                pre_key_values, 
                 pre_key_signal,
             ),
             self.derive_key(
-                rbc_values,
-                pre_key_values, 
                 pre_key_signal,
             ),
             work_tasks,
         )
 
-    async def pre_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal, pre_key_values, pre_key_signal):
+    async def pre_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal, pre_key_signal):
         await rbc_signal.wait()
         rbc_signal.clear()
 
@@ -317,33 +317,23 @@ class ADKG:
             return res
 
         
-        mks = set() # master key set
+        self.mks = set() # master key set
         for ks in  rbc_values:
             if ks is not None:
-                mks = mks.union(set(list(ks)))
+                self.mks = self.mks.union(set(list(ks)))
         
         # Waiting for all ACSS to terminate
-        for k in mks:
+        for k in self.mks:
             if k not in acss_outputs:
                 await acss_signal.wait()
                 acss_signal.clear()
-
-        # share of the master secret
-        z_0 = self.ZR(0)
-        com_0 = self.G1.identity()
-        agg_commits = [self.G1.identity()]*(self.t+1)
-        for node in mks:
-            z_0 = z_0 + acss_outputs[node]['shares']['msg'][0]
-            com_0 = com_0*acss_outputs[node]['commits'][0][0]
-            for i in range(self.t+1):
-                agg_commits[i] = agg_commits[i]*acss_outputs[node]['commits'][0][i]
 
         secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         commits = [[None]*self.n for _ in range(self.sc-1)]
         for idx in range(self.sc-1):
             for node in range(self.n):
-                if node in mks:
+                if node in self.mks:
                     secrets[idx][node] = acss_outputs[node]['shares']['msg'][idx+1]
                     randomness[idx][node] = acss_outputs[node]['shares']['rand'][idx]
                     commits[idx][node] = acss_outputs[node]['commits'][idx+1]
@@ -353,218 +343,98 @@ class ADKG:
         matrix = [[self.ZR(i+1)**j for j in range(self.n)] for i in range(self.t+1)]
         commits_zero = [[commits[idx][node][0] for node in range(self.n)] for idx in range(self.sc-1)]
 
-        # TODO(@sourav), FIXME: Make this generic with respect to number of secrets
-        commits_row = []
-        commits_row_coeffs = [None]*(self.t+1)
-        if self.my_id < self.t+1:
-            for i in range(self.t+1):
-                pre_commit = [commits[0][node][i] for node in range(self.n)]
-                commits_row_coeffs[i] = self.multiexp(pre_commit, matrix[self.my_id])
-            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
-        elif self.my_id < self.deg:
-            for i in range(self.t+1):
-                pre_commit = [commits[1][node][i] for node in range(self.n)]
-                commits_row_coeffs[i] = self.multiexp(pre_commit, matrix[self.my_id-(self.t+1)])
-            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
-        else:
-            # Computing the lagrange coefficents
-            lambdas = [None]*(self.deg+1)
-            for i in range(self.deg+1):
-                c = self.ZR(1)
-                for ii in range(self.deg + 1):
-                    if i == ii:
-                        continue 
-                    c = c*self.ZR(self.my_id+1-ii)/self.ZR(i-ii)
-                lambdas[i] = c
-            
-            scalars = [None]*self.n
-            for i in range(self.n):
-                temp_coeffs = [matrix[j][i] for j in range(self.t+1)]
-                scalars[i] = dot(temp_coeffs, lambdas[1:self.t+2])
-            
-            for i in range(self.t+1):
-                pre_commit = [commits[0][node][i] for node in range(self.n)]
-                commits_row_coeffs[i] = self.multiexp(pre_commit, scalars)
-            
-            for i in range(self.n):
-                temp_coeffs = [matrix[j][i] for j in range(self.deg - (self.t+1))]
-                scalars[i] = dot(temp_coeffs, lambdas[self.t+2:self.deg+1])
-
-            for i in range(self.t+1):
-                pre_commit = [commits[1][node][i] for node in range(self.n)]
-                commits_row_coeffs[i] = commits_row_coeffs[i]*self.multiexp(pre_commit, scalars)
-            
-            commits_row_coeffs = [commits_row_coeffs[i]*(agg_commits[i]**lambdas[0]) for i in range(self.t+1)]
-            commits_row = [evaluate_g1_at_x(commits_row_coeffs, ii+1, self.ZR, self.multiexp) for ii in range(self.n)]
-
-        z_shares = {0:z_0}
-        r_shares = {0:self.ZR(0)}
-        self.com_keys = {0:com_0}
+        z_coeffs = {}
+        r_coeffs = {}
+        com_coeffs = {}
 
         for i in range(self.t+1):
-            z_shares[i+1] = dot(matrix[i], secrets[0])
-            r_shares[i+1] = dot(matrix[i], randomness[0])
-            self.com_keys[i+1]= self.multiexp(commits_zero[0], matrix[i])
-        for i in range(self.t+1, self.deg):
-            z_shares[i+1] = dot(matrix[i-(self.t+1)], secrets[1])
-            r_shares[i+1] = dot(matrix[i-(self.t+1)], randomness[1])
-            self.com_keys[i+1]= self.multiexp(commits_zero[1], matrix[i-(self.t+1)])    
-        for i in range(self.deg, self.n):
-            z_shares[i+1] = self.poly.interpolate_at( list(z_shares.items()), i+1)
-            r_shares[i+1] = self.poly.interpolate_at(list(r_shares.items()), i+1)
-            self.com_keys[i+1] = interpolate_g1_at_x(list(self.com_keys.items()), i+1, self.G1, self.ZR)
-        
-        r_exps = [self.h**r_shares[i+1] for i in range(self.n)]
-        pok = PoK(self.h, self.ZR)
-        proof_r_exps = [pok.pok_prove(r_shares[i+1], r_exps[i]) for i in range(self.n)]
+            z_coeffs[i] = dot(matrix[i], secrets[0])
+            r_coeffs[i] = dot(matrix[i], randomness[0])
+            com_coeffs[i] = self.multiexp(commits_zero[0], matrix[i])
+        for i in range(self.t+1, self.deg+1):
+            z_coeffs[i] = dot(matrix[i-(self.t+1)], secrets[1])
+            r_coeffs[i] = dot(matrix[i-(self.t+1)], randomness[1])
+            com_coeffs[i]= self.multiexp(commits_zero[1], matrix[i-(self.t+1)])    
 
+        z_shares = {}
+        r_shares = {}
+        self.com_keys = {}
+        for i in range(self.n):
+            z_shares[i] = self.poly.interpolate_at( list(z_coeffs.items()), i+1)
+            r_shares[i] = self.poly.interpolate_at(list(r_coeffs.items()), i+1)
+            self.com_keys[i] = interpolate_g1_at_x(list(com_coeffs.items()), i+1, self.G1, self.ZR)
+        
         # Sending PREKEY messages
         keytag = ADKGMsgType.PREKEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
 
         for i in range(self.n):
-            send(i, (z_shares[i+1], r_exps, proof_r_exps[i]))
+            send(i, (z_shares[i], r_shares[i]))
         
         sk_shares = []
-        r_exp_shares = []
-        pre_key_values['r_exp_row'] = [None]*self.n
+        rk_shares = []
 
         while True:
             (sender, msg) = await recv()
-            sk_share, sender_r_exps, sender_proof_r_exp = msg
-
-            # Proof of Knowledge verification of h^{r_{i,j}}
-            chal, resp = sender_proof_r_exp
-            sender_r_exp = sender_r_exps[self.my_id] 
-            valid_pok = pok.pok_verify(sender_r_exp, chal, resp)
-            valid_r_exp = sender_r_exp*(self.g**sk_share) == commits_row[sender]
-
-            if not (valid_pok and valid_r_exp):
-                continue
+            sk_share, rk_share = msg
 
             sk_shares.append([sender+1, sk_share])
-            r_exp_shares.append([sender+1, sender_r_exp])
-            pre_key_values['r_exps'][sender] = sender_r_exps
-            pre_key_values['r_exp_row'][sender] = sender_r_exp
-            if len(sk_shares) == self.t+1:
-                # Interpolating the share
-                pre_key_values['share'] =  self.poly.interpolate_at(sk_shares, 0)
-                pre_key_values['my_r_exp'] = interpolate_g1_at_x(r_exp_shares, 0, self.G1, self.ZR)
+            rk_shares.append([sender+1, rk_share])
 
-                # Computing the rest of the h^r
-                for node in range(self.n):
-                    if pre_key_values['r_exp_row'][node] is None:
-                        pre_key_values['r_exp_row'][node] = interpolate_g1_at_x(r_exp_shares, node+1, self.G1, self.ZR)
-                pre_key_signal.set()
-            elif len(sk_shares) > self.t+1:
-                pre_key_signal.clear()
-                pre_key_signal.set()
-            
-            if len(sk_shares) == self.n:
-                return
+            # Interpolating the share
+            if len(sk_shares) >= self.t+1:    
+                secret =  self.poly.interpolate_at(sk_shares, 0)
+                random =  self.poly.interpolate_at(rk_shares, 0)
+
+                if (self.g**secret)*(self.h**random) == self.com_keys[self.my_id]:
+                    self.shares = (secret, random)
+                    pre_key_signal.set()
+                    return
+                else:
+                    # TODO(@sourav), FIXME!! Implment online error correction
+                    continue
         
 
-    async def derive_key(self, rbc_values, pre_key_values, pre_key_signal):
+    async def derive_key(self, pre_key_signal):
         # Waiting for the ABA to terminate
         await pre_key_signal.wait()
         pre_key_signal.clear()
 
-        secret = pre_key_values['share']
+        secret, random = self.shares
         x = self.g**secret
-        y = self.h**secret
-        cp = CP(self.g, self.h, self.ZR)
-        chal, res = cp.dleq_prove(secret, x, y)
+        y = self.h**random
+        gpok = PoK(self.g, self.ZR)
+        hpok = PoK(self.h, self.ZR)
+        gchal, gres = gpok.pok_prove(secret, x)
+        hchal, hres = hpok.pok_prove(random, y)
 
         keytag = ADKGMsgType.KEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
 
         sr = Serial(self.G1)
-        yb, chalb, resb = sr.serialize_g(y), sr.serialize_f(chal), sr.serialize_f(res)
+        xb, gchalb, gresb = sr.serialize_g(x), sr.serialize_f(gchal), sr.serialize_f(gres)
+        yb, hchalb, hresb = sr.serialize_g(y), sr.serialize_f(hchal), sr.serialize_f(hres)
         for i in range(self.n):
-            send(i, (yb, chalb, resb, pre_key_values['r_exp_row']))
+            send(i, (xb, yb, gchalb, gresb, hchalb, hresb))
         
-        self.threshold_pks = False
-        self.pk_shares = []
-
-        # Function to process back_logs
-        async def process_backlog():
-            await pre_key_signal.wait()
-            pre_key_signal.clear()
-
-            for sender, msg in self.back_log_senders.items():
-                yb, chalb, resb, r_exp_sender_row = msg
-                y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
-
-                match_count = 0
-                for node in range(self.n):
-                    if pre_key_values['r_exps'][node][sender] == r_exp_sender_row[node]:
-                        match_count = match_count+1
-
-                h_r_sender = interpolate_g1_at_x([(i+1, r_exp_sender_row[i]) for i in range(self.n)], 0, self.G1, self.ZR)
-                g_z_sender = self.com_keys[sender+1]*(h_r_sender**(-1))
-            
-                if cp.dleq_verify(g_z_sender, y, chal, res):
-                    self.pk_shares.append([sender+1, y])
-                    if len(self.pk_shares) > self.deg:
-                        self.threshold_pks = True
-                        break
-
-        asyncio.create_task(process_backlog())
-        
-        self.back_log_senders = {}
-        while not self.threshold_pks:
+        pk_shares = []
+        while True:
             (sender, msg) = await recv()
-            yb, chalb, resb, r_exp_sender_row = msg
-            y, chal, res =  sr.deserialize_g(yb), sr.deserialize_f(chalb), sr.deserialize_f(resb)
-
-            # checking degree of the row sent by the node.
-            if not self.check_degree(self.t, r_exp_sender_row):
-                continue
+            xb, yb, gchalb, gresb, hchalb, hresb = msg
+            x, gchal, gres =  sr.deserialize_g(xb), sr.deserialize_f(gchalb), sr.deserialize_f(gresb)
+            y, hchal, hres =  sr.deserialize_g(yb), sr.deserialize_f(hchalb), sr.deserialize_f(hresb)
             
-            # Checking if the row sent by the node matches with large number of column elements
-            match_count = 0
-            for node in range(self.n):
-                if pre_key_values['r_exps'][node][sender] == r_exp_sender_row[node]:
-                    match_count = match_count+1
-            
-            # If not enough matches, then add to backlog and continue
-            if match_count < 2*self.t + 1:
-                self.back_log_senders[sender] = msg
-                continue
-            
-            h_r_sender = interpolate_g1_at_x([(i+1, r_exp_sender_row[i]) for i in range(self.n)], 0, self.G1, self.ZR)
-            g_z_sender = self.com_keys[sender+1]*(h_r_sender**(-1))
-            
-            if cp.dleq_verify(g_z_sender, y, chal, res):
-                self.pk_shares.append([sender+1, y])
-                if len(self.pk_shares) > self.deg:
+            valid_pok = gpok.pok_verify(x, gchal, gres) and hpok.pok_verify(y, hchal, hres)
+            if valid_pok and x*y == self.com_keys[sender]:
+                pk_shares.append([sender+1, x])
+                if len(pk_shares) > self.deg:
                     break
-        pk =  interpolate_g1_at_x(self.pk_shares, 0, self.G1, self.ZR)
-
-        mks = set() # master key set only for testing purposes
-        for ks in  rbc_values:
-            if ks is not None:
-                mks = mks.union(set(list(ks)))
+        pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
         
-        return (mks, secret, pk)
-    
-    def check_degree(self, claimed_degree, points):
-        dual_code = self.gen_dual_code(claimed_degree)
-        check = self.multiexp(points, dual_code)
-        return check == self.h**self.ZR(0)
-
-    def gen_dual_code(self, degree):
-        def get_vi(i, n):
-            out = self.ZR(1)
-            for j in range(1, n+1):
-                if j != i:
-                    out = out / (i-j)
-            return out
-        q = self.poly.random(self.n -degree -2)
-        q_evals = [q(i+1) for i in range(self.n)]
-        return [q_evals[i] * get_vi(i+1, self.n) for i in range(self.n)]
+        return (self.mks, secret, pk)
 
     async def run_adkg(self, start_time):
+        logging.info(f"Run ADKG called")
         acss_outputs = {}
         acss_signal = asyncio.Event()
 
@@ -586,4 +456,4 @@ class ADKG:
         logging.info(f"ADKG time: {(adkg_time)}")
         await asyncio.gather(*work_tasks)
         mks, sk, pk = output
-        self.output_queue.put_nowait((values[0], mks, sk, pk))
+        self.output_queue.put_nowait((values[1], mks, sk, pk))

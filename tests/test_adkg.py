@@ -5,8 +5,8 @@ from adkg.adkg import ADKG
 import asyncio
 import uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-# from pypairing import ZR, G1, blsmultiexp as multiexp
-from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp
+from pypairing import ZR, G1, blsmultiexp as multiexp
+# from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp
     
 import time
 
@@ -55,7 +55,7 @@ async def test_adkg(test_router):
 
     poly = polynomials_over(ZR)
     msk = poly.interpolate_at(shares,0)
-    mpk = h**msk
+    mpk = g**msk
 
     for i in range(n):
         assert(mpk == outputs[i][3])
@@ -64,10 +64,10 @@ async def test_adkg(test_router):
     for i in range(1, n):
         assert mks_set == outputs[i][1]
 
-    msk_sum = ZR(0)
+    mks_sum = ZR(0)
     for node in mks_set:
-        msk_sum = msk_sum + outputs[node][0]
-    assert msk_sum == msk
+        mks_sum = mks_sum + outputs[node][0]
+    assert msk == mks_sum
 
     def check_degree(claimed_degree, points):
         dual_code = gen_dual_code(n, claimed_degree, poly)
@@ -92,8 +92,6 @@ async def test_adkg(test_router):
             res = res + a[i][1]*b[i]
         return res
     
-    degrees = {}
-    for i in range(t, n):
-        degrees[i] = check_degree(i, shares)
-    
-    print(degrees)
+
+    assert not check_degree(deg-1, shares)
+    assert check_degree(deg, shares)

@@ -160,26 +160,25 @@ class ACSS_HT:
             multicast((HbAVSSMessageType.OK, ""))
     
     def decode_proposal(self, proposal):
-        # TODO(@sourav): To optimize this
-        g_size = 32
-        c_size = 64
+        g_size = self.sr.g_size
+        c_size = 32
 
-        commits, ephkey, dispersal_msg_list = loads(proposal)
-        dispersal_msg = dispersal_msg_list[self.my_id]
+        # deserializing commitments
+        com_size = g_size*(self.t+1)*(self.sc)
+        commits_all = self.sr.deserialize_gs(proposal[0:com_size])
+        commits = [commits_all[i*(self.t+1):(i+1)*(self.t+1)] for i in range(self.sc)]
+
+        # deserializing ciphertexts
+        # IMPORTANT: Here 32 additional bytes are used in the ciphertext for padding
+        ctx_size = c_size*2*self.sc*self.n
+        my_ctx_start = com_size + c_size*2*self.sc*self.my_id
+        my_ctx_end = my_ctx_start + c_size*2*self.sc
+        ctx_bytes = proposal[my_ctx_start:my_ctx_end]
+
+        # deserializing the ephemeral public key
+        ephkey = self.sr.deserialize_g(proposal[com_size+ctx_size:])
         
-        return (dispersal_msg, commits, ephkey)
-
-        # commit_data = proposal[0:g_size*self.sc*(self.t+1)]
-        # commits_raw = Serial.deserialize_gs(commit_data) 
-        # commits = [commits_raw[i*g_size*(self.t+1):(i+1)*g_size*(self.t+1)] for i in range(self.sc)]
-        
-        # ephkey_data = proposal[self.sc*g_size*(self.t+1):self.sc*g_size*(self.t+1)+g_size]
-        # ephkey = Serial.deserialize_g(ephkey_data)
-
-        # dispersal_msg_all = loads(proposal[self.sc*g_size*(self.t+1)+g_size:])
-        # dispersal_msg = dispersal_msg_all[self.my_id]
-
-        # return (dispersal_msg, commits, ephkey)
+        return (ctx_bytes, commits, ephkey)
 
     
     def verify_proposal(self, dealer_id, dispersal_msg, commits, ephkey):
@@ -192,7 +191,8 @@ class ACSS_HT:
             self.acss_status[dealer_id] = False
             return False
 
-        phis, phis_hat = loads(sharesb)
+        shares = self.sr.deserialize_fs(sharesb)
+        phis, phis_hat = shares[:self.sc], shares[self.sc:]
         # check the feldman commitment of the first secret
         if not self.poly_commit.verify_eval(commits[0], self.my_id + 1, phis[0], None): 
             self.acss_status[dealer_id] = False
@@ -297,24 +297,23 @@ class ACSS_HT:
 
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = self.g**ephemeral_secret_key
-        dispersal_msg_list = []
+        dispersal_msg_list = bytearray()
         for i in range(n):
             shared_key = self.public_keys[i]**ephemeral_secret_key
             phis_i = [phi[k](i + 1) for k in range(self.sc)]
             phis_hat_i = [phi_hat[k](i + 1) for k in range(1, self.sc)]
             # TODO(@optimize message size here)
-            shares = dumps([phis_i, phis_hat_i])
+            shares = self.sr.serialize_fs(phis_i+ phis_hat_i)
             ciphertext = SymmetricCrypto.encrypt(shared_key.__getstate__(), shares)
-            dispersal_msg_list.append(ciphertext)
+            dispersal_msg_list.extend(ciphertext)
 
-        # datab = serialize_gs(commitments[0]) # Serializing commitments
-        # for k in range(1, secret_count):
-        #     datab.extend(serialize_gs(commitments[k]))
-        # datab.extend(serialize_g(ephemeral_public_key))
+        g_commits = []
+        for k in range(self.sc):
+            g_commits = g_commits + commitments[k]
+        datab = self.sr.serialize_gs(g_commits) # Serializing commitments
+        datab.extend(dispersal_msg_list)
+        datab.extend(self.sr.serialize_g(ephemeral_public_key))
 
-        # TODO(@optimize message size here)
-        datab = dumps((commitments, ephemeral_public_key, dispersal_msg_list))
-        # datab.extend(dumps(dispersal_msg_list)) # Appending the AVID messages
         return bytes(datab)
     
     #@profile
@@ -331,8 +330,9 @@ class ACSS_HT:
             logger.warn(f"Implicate due to failure in decrypting: {e}")
             return False
         
+        shares = self.sr.deserialize_fs(sharesb)
         if self.acss_status[dealer_id]: 
-            self.tagvars[tag]['shares'] =  loads(sharesb)
+            self.tagvars[tag]['shares'] =  [shares[:self.sc], shares[self.sc:]]
             self.tagvars[tag]['witnesses'] = [None]
             return True
         return False

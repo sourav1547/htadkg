@@ -5,8 +5,8 @@ from adkg.adkg import ADKG
 import asyncio
 import uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-from pypairing import ZR, G1, blsmultiexp as multiexp
-# from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp
+# from pypairing import ZR, G1, blsmultiexp as multiexp
+from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp
     
 import time
 
@@ -20,7 +20,7 @@ def get_avss_params(n, G1):
 
 @mark.asyncio
 async def test_adkg(test_router):
-    t = 4
+    t = 3
     deg = 2*t
     n = 3 * t + 1
 

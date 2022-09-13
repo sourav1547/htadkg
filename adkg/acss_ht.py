@@ -28,11 +28,12 @@ class HbAVSSMessageType:
 class ACSS_HT:
     #@profile
     def __init__(
-            self, public_keys, private_key, g, h, n, t, deg, sc, my_id, send, recv, pc, field
+            self, public_keys, private_key, g, h, n, t, deg, sc, my_id, send, recv, pc, field, G1
     ):  # (# noqa: E501)
         self.public_keys, self.private_key = public_keys, private_key
         self.n, self.t, self.deg, self.my_id = n, t, deg, my_id
         self.g, self.h = g, h 
+        self.sr = Serial(G1)
         self.sc = sc 
         self.poly_commit = pc
 
@@ -82,18 +83,18 @@ class ACSS_HT:
         """
         commitments =  self.tagvars[tag]['commitments']
         # discard if PKj ! = g^SKj
-        if self.public_keys[j] != pow(self.g, j_sk):
+        if self.public_keys[j] != self.g**j_sk:
             return False
         # decrypt and verify
         implicate_msg = None #FIXME: IMPORTANT!!
-        j_shared_key = pow(self.tagvars[tag]['ephemeral_public_key'], j_sk)
+        j_shared_key = (self.tagvars[tag]['ephemeral_public_key'])**j_sk
 
         # Same as the batch size
         secret_count = len(commitments)
 
         try:
             j_shares, j_witnesses = SymmetricCrypto.decrypt(
-                str(j_shared_key).encode(), implicate_msg
+                j_shared_key.__getstate__(), implicate_msg
             )
         except Exception as e:  # TODO specific exception
             logger.warn("Implicate confirmed, bad encryption:", e)
@@ -130,7 +131,7 @@ class ACSS_HT:
             retrieved_msg = None
             try:
                 j_shares, j_witnesses = SymmetricCrypto.decrypt(
-                    str(avss_msg[1]).encode(), retrieved_msg
+                    avss_msg[1].__getstate__(), retrieved_msg
                 )
             except Exception as e:  # TODO: Add specific exception
                 logger.debug("Implicate confirmed, bad encryption:", e)
@@ -160,7 +161,7 @@ class ACSS_HT:
     
     def decode_proposal(self, proposal):
         # TODO(@sourav): To optimize this
-        g_size = 48
+        g_size = 32
         c_size = 64
 
         commits, ephkey, dispersal_msg_list = loads(proposal)
@@ -182,10 +183,10 @@ class ACSS_HT:
 
     
     def verify_proposal(self, dealer_id, dispersal_msg, commits, ephkey):
-        shared_key = pow(ephkey, self.private_key)
+        shared_key = ephkey**self.private_key
 
         try:
-            sharesb = SymmetricCrypto.decrypt(str(shared_key).encode(), dispersal_msg)
+            sharesb = SymmetricCrypto.decrypt(shared_key.__getstate__(), dispersal_msg)
         except ValueError as e:  # TODO: more specific exception
             logger.warn(f"Implicate due to failure in decrypting: {e}")
             self.acss_status[dealer_id] = False
@@ -288,20 +289,22 @@ class ACSS_HT:
                 phi[k] = self.poly.random(self.t, values[k])
                 commitments[k] = self.poly_commit.commit(phi[k], None)
             else:
+                # TODO(@sourav): Implement FFT here
                 phi[k] = self.poly.random(self.t, values[k])
                 phi_hat[k] = self.poly.random(self.t, self.field.rand())
                 commitments[k] = self.poly_commit.commit(phi[k], phi_hat[k])
 
 
         ephemeral_secret_key = self.field.random()
-        ephemeral_public_key = pow(self.g, ephemeral_secret_key)
+        ephemeral_public_key = self.g**ephemeral_secret_key
         dispersal_msg_list = []
         for i in range(n):
-            shared_key = pow(self.public_keys[i], ephemeral_secret_key)
+            shared_key = self.public_keys[i]**ephemeral_secret_key
             phis_i = [phi[k](i + 1) for k in range(self.sc)]
             phis_hat_i = [phi_hat[k](i + 1) for k in range(1, self.sc)]
+            # TODO(@optimize message size here)
             shares = dumps([phis_i, phis_hat_i])
-            ciphertext = SymmetricCrypto.encrypt(str(shared_key).encode(), shares)
+            ciphertext = SymmetricCrypto.encrypt(shared_key.__getstate__(), shares)
             dispersal_msg_list.append(ciphertext)
 
         # datab = serialize_gs(commitments[0]) # Serializing commitments
@@ -309,6 +312,7 @@ class ACSS_HT:
         #     datab.extend(serialize_gs(commitments[k]))
         # datab.extend(serialize_g(ephemeral_public_key))
 
+        # TODO(@optimize message size here)
         datab = dumps((commitments, ephemeral_public_key, dispersal_msg_list))
         # datab.extend(dumps(dispersal_msg_list)) # Appending the AVID messages
         return bytes(datab)
@@ -316,13 +320,13 @@ class ACSS_HT:
     #@profile
     def _handle_dealer_msgs(self, tag, dispersal_msg, rbc_msg, dealer_id):
         commitments, ephemeral_public_key = rbc_msg
-        shared_key = pow(ephemeral_public_key, self.private_key)
+        shared_key = ephemeral_public_key**self.private_key
         self.tagvars[tag]['shared_key'] = shared_key
         self.tagvars[tag]['commitments'] = commitments
         self.tagvars[tag]['ephemeral_public_key'] = ephemeral_public_key
         
         try:
-            sharesb = SymmetricCrypto.decrypt(str(shared_key).encode(), dispersal_msg)
+            sharesb = SymmetricCrypto.decrypt(shared_key.__getstate__(), dispersal_msg)
         except ValueError as e:  # TODO: more specific exception
             logger.warn(f"Implicate due to failure in decrypting: {e}")
             return False

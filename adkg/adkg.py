@@ -120,7 +120,7 @@ class ADKG:
     async def acss_step(self, outputs, values, acss_signal):
         acsstag = ADKGMsgType.ACSS
         acsssend, acssrecv = self.get_send(acsstag), self.subscribe_recv(acsstag)
-        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.sc, self.my_id, acsssend, acssrecv, self.pc, self.ZR)
+        self.acss = ACSS_HT(self.public_keys, self.private_key, self.g, self.h, self.n, self.t, self.deg, self.sc, self.my_id, acsssend, acssrecv, self.pc, self.ZR, self.G1)
         self.acss_tasks = [None] * self.n
         for i in range(self.n):
             if i == self.my_id:
@@ -340,6 +340,7 @@ class ADKG:
                 else:
                     commits[idx][node] = [self.G1.identity() for _ in range(self.t+1)]
         
+        # TODO(@sourav) compute this beforehand
         matrix = [[self.ZR(i+1)**j for j in range(self.n)] for i in range(self.t+1)]
         commits_zero = [[commits[idx][node][0] for node in range(self.n)] for idx in range(self.sc-1)]
 
@@ -347,6 +348,7 @@ class ADKG:
         r_coeffs = {}
         com_coeffs = {}
 
+        # TODO(@sourav) Optimize this part to use FFT
         for i in range(self.t+1):
             z_coeffs[i] = dot(matrix[i], secrets[0])
             r_coeffs[i] = dot(matrix[i], randomness[0])
@@ -359,6 +361,7 @@ class ADKG:
         z_shares = {}
         r_shares = {}
         self.com_keys = {}
+        # TODO(@sourav) Optimize this part to use FFT
         for i in range(self.n):
             z_shares[i] = self.poly.interpolate_at( list(z_coeffs.items()), i+1)
             r_shares[i] = self.poly.interpolate_at(list(r_coeffs.items()), i+1)

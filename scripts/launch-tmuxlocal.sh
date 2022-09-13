@@ -37,7 +37,7 @@ echo ">>> Command to be executed: '${CMD}'"
 # sudo sh scripts/latency-control.sh start 50ms 10ms
 
 start_time=$(date +%s)
-start_time=$((start_time+10))
+start_time=$((start_time+2))
 
 ## TODO: the following was used for launching a larger number
 ## of processes locally, with only a portion of them shown in tmux
@@ -59,16 +59,4 @@ if [ -z "$3" ]
         # selectp -t 0 \; \
         # splitw -v -p 66 "${CMD} -d -f ${CONFIG_PATH}.4.json; sh" \; \
         # splitw -v -p 50 "${CMD} -d -f ${CONFIG_PATH}.5.json; sh"
-
-
-elif [ "$3" == "dealer" ]
-  then
-    set -x
-    rm -rf sharedata/
-    tmux new-session     "${CMD} -d -f ${CONFIG_PATH}.0.json > xxxxxxxx.out; sh" \; \
-        splitw -h -p 50 "${CMD} -d -f ${CONFIG_PATH}.1.json; sh" \; \
-        splitw -v -p 50 "sleep 2; ${CMD} -d -f ${CONFIG_PATH}.2.json; sh" \; \
-        selectp -t 0 \; \
-        splitw -v -p 50 "sleep 4; ${CMD} -d -f ${CONFIG_PATH}.3.json; sh" \; \
-        splitw -v -p 50 "${CMD} -d -f ${CONFIG_PATH}.4.json; sh"
 fi

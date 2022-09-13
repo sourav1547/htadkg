@@ -39,7 +39,7 @@ port=8000
 
 CMD="-v /Users/sourav/hbACSS/conf/adkg:/usr/src/adkg/config/ \
     -v /Users/sourav/hbACSS/benchmark-logs:/usr/src/adkg/benchmark-logs/ \
-    sourav1547/adkg:latest
+    sourav1547/htadkg:latest
     python3 -m scripts.adkg_run"
 
 # CMD="python3 -m ${MODULE_PATH}"

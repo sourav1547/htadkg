@@ -1,9 +1,10 @@
 from pypairing import ZR as blsZR, G1 as blsG1
-from pypairing import Curve25519ZR as ZR, Curve25519G as G1
+from pypairing import Curve25519ZR as ZR
 
 class Serial:
     def __init__(self, G1):
         self.G1 = G1
+        self.f_size = 32
         if G1 is blsG1:
             self.ZR = blsZR
             self.g_size = 48
@@ -45,15 +46,21 @@ class Serial:
         f.__setstate__(data)
         return f
 
-    # Not tested yet
     def serialize_fs(self, f_list):    
         n = len(f_list)
-        # TODO: check the size of a field element for bls12381
-        f_size = 32 # Only valid for ed25519, to change this for bls12381
-        data = bytearray(n*f_size)
+        data = bytearray()
         for i in range(n):
             f = f_list[i]
-            data[i*f_size] = f.__getstate__()
+            data.extend(f.__getstate__())
         return data
+    
+    def deserialize_fs(self, data):    
+        n = len(data)//self.f_size
+        fs = [None for _ in range(n)]
+        for i in range(n):            
+            f = self.ZR()
+            f.__setstate__(data[i*self.f_size:(i+1)*self.f_size])
+            fs[i] = f
+        return fs
 
 

@@ -14,13 +14,13 @@ def get_avss_params(n, G1):
     g, h = G1.rand(b'g'), G1.rand(b'h')
     public_keys, private_keys = [None] * n, [None] * n
     for i in range(n):
-        private_keys[i] = ZR.random()
+        private_keys[i] = ZR.hash(str(i).encode())
         public_keys[i] = pow(g, private_keys[i])
     return g, h, public_keys, private_keys
 
 @mark.asyncio
 async def test_adkg(test_router):
-    t = 3
+    t = 4
     deg = 2*t
     n = 3 * t + 1
 

@@ -39,7 +39,7 @@ Use the following commands to push the image to dockerhub. Avoid building the im
 ```
 cd /path/to/adkg
 docker build -t adkg . --build-arg BUILD=dev
-docker tag adkg:latest sourav1547/adkg:latest # Replace with appropriate DockerHub location
-docker push sourav1547/adkg:latest # Replace with appropriate DockerHub location
+docker tag adkg:latest sourav1547/htadkg:latest # Replace with appropriate DockerHub location
+docker push sourav1547/htadkg:latest # Replace with appropriate DockerHub location
 
 ```

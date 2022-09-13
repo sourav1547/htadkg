@@ -4,7 +4,7 @@
         "command": "python3 -m scripts.adkg_run",
         "t": 42, 
         "n": 128,
-        "k": 42,
+        "k": 84,
         "num_faulty_nodes": 0,
         "port": 7001
     },
@@ -78,6 +78,6 @@
     },
 
     "docker": {
-        "image_path": "sourav1547/adkg:latest"
+        "image_path": "sourav1547/htadkg:latest"
     }
 }

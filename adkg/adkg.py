@@ -1,10 +1,10 @@
 from adkg.polynomial import polynomials_over
-from adkg.utils.poly_misc import evaluate_g1_at_x, interpolate_g1_at_x
+from adkg.utils.poly_misc import interpolate_g1_at_x
 from adkg.utils.misc import wrap_send, subscribe_recv
 import asyncio
-import hashlib, time, math
+import hashlib, time
+from math import ceil
 import logging
-from adkg.utils.serilization import Serial
 from adkg.utils.bitmap import Bitmap
 from adkg.acss_ht import ACSS_HT
 
@@ -38,8 +38,9 @@ class CP:
         return self.ZR.hash(hs)
 
     def dleq_verify(self, x, y, chal, res):
-        a1 = (x**chal)*(self.g**res)
-        a2 = (y**chal)*(self.h**res)
+        a1 = self.multiexp([x, self.g],[chal, res])
+        a2 = self.multiexp([y, self.h],[chal, res])
+
         eLocal = self.dleq_derive_chal(x, a1, y, a2)
         return eLocal == chal
 
@@ -51,9 +52,10 @@ class CP:
         return  e, w - e*alpha # return (challenge, response)
 
 class PoK:
-    def __init__(self, g, ZR):
+    def __init__(self, g, ZR, multiexp):
         self.g  = g
         self.ZR = ZR
+        self.multiexp = multiexp
 
     def pok_derive_chal(self, x, a):
         commit = str(x)+str(a)
@@ -65,27 +67,28 @@ class PoK:
         return self.ZR.hash(hs)
 
     def pok_verify(self, x, chal, res):
-        a = (x**chal)*(self.g**res)
+        a = self.multiexp([x, self.g],[chal, res])
         eLocal = self.pok_derive_chal(x, a)
         return eLocal == chal
 
     def pok_prove(self, alpha, x):
-        w = self.ZR.random()
+        w = self.ZR.rand()
         a = self.g**w
         e = self.pok_derive_chal(x, a)
         return  e, w - e*alpha # return (challenge, response)
     
 class ADKG:
-    def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, multiexp, ZR, G1):
+    def __init__(self, public_keys, private_key, g, h, n, t, deg, my_id, send, recv, pc, curve_params, matrices):
         self.public_keys, self.private_key, self.g, self.h = (public_keys, private_key, g, h)
         self.n, self.t, self.deg, self.my_id = (n, t, deg, my_id)
-        self.sc = math.ceil((deg+1)/(t+1)) + 1
-        self.send, self.recv, self.pc, self.ZR, self.G1 = (send, recv, pc, ZR, G1)
-        self.multiexp = multiexp
+        self.sc = ceil((deg+1)/(t+1)) + 1
+        self.send, self.recv, self.pc = (send, recv, pc)
+        self.ZR, self.G1, self.multiexp, self.dotprod = curve_params
         self.poly = polynomials_over(self.ZR)
         self.poly.clear_cache() #FIXME: Not sure why we need this.
         # Create a mechanism to split the `recv` channels based on `tag`
         self.subscribe_recv_task, self.subscribe_recv = subscribe_recv(recv)
+        self.mat1 , self.mat2 = matrices
 
         # Create a mechanism to split the `send` channels based on `tag`
         def _send(tag):
@@ -280,7 +283,6 @@ class ADKG:
         rbc_signal = asyncio.Event()
         rbc_values = [None for i in range(self.n)]
         pre_key_signal  = asyncio.Event()
-        pre_key_values = {'share':None, 'my_r_exp':None, 'r_exps': [None for _ in range(self.n)]}
 
         return (
             self.commonsubset(
@@ -310,17 +312,13 @@ class ADKG:
         await rbc_signal.wait()
         rbc_signal.clear()
 
-        def dot(a, b):
-            res = self.ZR(0)
-            for i in range(len(a)):
-                res = res + a[i]*b[i]
-            return res
-
         
         self.mks = set() # master key set
         for ks in  rbc_values:
             if ks is not None:
                 self.mks = self.mks.union(set(list(ks)))
+                if len(self.mks) >= self.n-self.t:
+                    break
         
         # Waiting for all ACSS to terminate
         for k in self.mks:
@@ -330,42 +328,22 @@ class ADKG:
 
         secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
-        commits = [[None]*self.n for _ in range(self.sc-1)]
+        commits = [[self.G1(1)]*self.n for _ in range(self.sc-1)]
         for idx in range(self.sc-1):
             for node in range(self.n):
                 if node in self.mks:
                     secrets[idx][node] = acss_outputs[node]['shares']['msg'][idx+1]
                     randomness[idx][node] = acss_outputs[node]['shares']['rand'][idx]
-                    commits[idx][node] = acss_outputs[node]['commits'][idx+1]
-                else:
-                    commits[idx][node] = [self.G1.identity() for _ in range(self.t+1)]
+                    commits[idx][node] = acss_outputs[node]['commits'][idx+1][0]
         
-        # TODO(@sourav) compute this beforehand
-        matrix = [[self.ZR(i+1)**j for j in range(self.n)] for i in range(self.t+1)]
-        commits_zero = [[commits[idx][node][0] for node in range(self.n)] for idx in range(self.sc-1)]
+        # z_shares = [self.ZR(0)]*self.n
+        # r_shares = [self.ZR(0)]*self.n
+        # self.com_keys = [self.G1(1)]*self.n
+    
+        z_shares =[self.dotprod(self.mat1[i], secrets[0]) + self.dotprod(self.mat2[i], secrets[1]) for i in range(self.n)]
+        r_shares = [self.dotprod(self.mat1[i], randomness[0]) + self.dotprod(self.mat2[i], randomness[1]) for i in range(self.n)]
+        self.com_keys = [(self.multiexp(commits[0], self.mat1[i]))*(self.multiexp(commits[1], self.mat2[i])) for i in range(self.n)]
 
-        z_coeffs = {}
-        r_coeffs = {}
-        com_coeffs = {}
-
-        # TODO(@sourav) Optimize this part to use FFT
-        for i in range(self.t+1):
-            z_coeffs[i] = dot(matrix[i], secrets[0])
-            r_coeffs[i] = dot(matrix[i], randomness[0])
-            com_coeffs[i] = self.multiexp(commits_zero[0], matrix[i])
-        for i in range(self.t+1, self.deg+1):
-            z_coeffs[i] = dot(matrix[i-(self.t+1)], secrets[1])
-            r_coeffs[i] = dot(matrix[i-(self.t+1)], randomness[1])
-            com_coeffs[i]= self.multiexp(commits_zero[1], matrix[i-(self.t+1)])    
-
-        z_shares = {}
-        r_shares = {}
-        self.com_keys = {}
-        # TODO(@sourav) Optimize this part to use FFT
-        for i in range(self.n):
-            z_shares[i] = self.poly.interpolate_at( list(z_coeffs.items()), i+1)
-            r_shares[i] = self.poly.interpolate_at(list(r_coeffs.items()), i+1)
-            self.com_keys[i] = interpolate_g1_at_x(list(com_coeffs.items()), i+1, self.G1, self.ZR)
         
         # Sending PREKEY messages
         keytag = ADKGMsgType.PREKEY
@@ -389,7 +367,7 @@ class ADKG:
                 secret =  self.poly.interpolate_at(sk_shares, 0)
                 random =  self.poly.interpolate_at(rk_shares, 0)
 
-                if (self.g**secret)*(self.h**random) == self.com_keys[self.my_id]:
+                if self.multiexp([self.g, self.h],[secret, random]) == self.com_keys[self.my_id]:
                     self.shares = (secret, random)
                     pre_key_signal.set()
                     return
@@ -406,26 +384,21 @@ class ADKG:
         secret, random = self.shares
         x = self.g**secret
         y = self.h**random
-        gpok = PoK(self.g, self.ZR)
-        hpok = PoK(self.h, self.ZR)
+        gpok = PoK(self.g, self.ZR, self.multiexp)
+        hpok = PoK(self.h, self.ZR, self.multiexp)
         gchal, gres = gpok.pok_prove(secret, x)
         hchal, hres = hpok.pok_prove(random, y)
 
         keytag = ADKGMsgType.KEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
 
-        sr = Serial(self.G1)
-        xb, gchalb, gresb = sr.serialize_g(x), sr.serialize_f(gchal), sr.serialize_f(gres)
-        yb, hchalb, hresb = sr.serialize_g(y), sr.serialize_f(hchal), sr.serialize_f(hres)
         for i in range(self.n):
-            send(i, (xb, yb, gchalb, gresb, hchalb, hresb))
+            send(i, (x, y, gchal, gres, hchal, hres))
         
         pk_shares = []
         while True:
             (sender, msg) = await recv()
-            xb, yb, gchalb, gresb, hchalb, hresb = msg
-            x, gchal, gres =  sr.deserialize_g(xb), sr.deserialize_f(gchalb), sr.deserialize_f(gresb)
-            y, hchal, hres =  sr.deserialize_g(yb), sr.deserialize_f(hchalb), sr.deserialize_f(hresb)
+            x, y, gchal, gres, hchal, hres = msg
             
             valid_pok = gpok.pok_verify(x, gchal, gres) and hpok.pok_verify(y, hchal, hres)
             if valid_pok and x*y == self.com_keys[sender]:

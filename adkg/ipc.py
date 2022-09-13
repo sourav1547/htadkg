@@ -109,10 +109,10 @@ class NodeCommunicator(object):
                 logging.debug("No more messages to Node: %d can be sent.", node_id)
                 break
             raw_msg = dumps(msg)
-            self.bytes_sent += len(raw_msg)
-            # logging.info("[SEND] TO: %d, MSG_TYPE: %s", node_id, msg[1][0])
-            msg_type = msg[1][0][0:1]
-            self.bytes_count[msg_type] = self.bytes_count[msg_type] + len(raw_msg)
+            # self.bytes_sent += len(raw_msg)
+            # # logging.info("[SEND] TO: %d, MSG_TYPE: %s", node_id, msg[1][0])
+            # msg_type = msg[1][0][0:1]
+            # self.bytes_count[msg_type] = self.bytes_count[msg_type] + len(raw_msg)
             await send_to_node([raw_msg])
 
 

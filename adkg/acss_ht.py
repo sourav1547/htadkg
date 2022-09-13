@@ -57,6 +57,7 @@ class ACSS_HT:
         self.output_queue = asyncio.Queue()
         self.tagvars = {}
         self.tasks = []
+        self.data = {}
 
     def __enter__(self):
         return self
@@ -203,6 +204,7 @@ class ACSS_HT:
                 return False
         
         self.acss_status[dealer_id] = True
+        self.data[dealer_id] = [commits, phis, phis_hat, ephkey, shared_key]
         return True
 
     
@@ -218,13 +220,14 @@ class ACSS_HT:
 
         self.tagvars[tag]['io'] = [send, recv, multicast]
         self.tagvars[tag]['in_share_recovery'] = False
-        dispersal_msg, commits, ephkey = self.decode_proposal(rbc_msg)
+        # dispersal_msg, commits, ephkey = self.decode_proposal(rbc_msg)
+        # dispersal_msg, commits, ephkey = self.decode_proposal(rbc_msg)
         
         ok_set = set()
         implicate_set = set()
         output = False
 
-        self.tagvars[tag]['all_shares_valid'] = self._handle_dealer_msgs(tag, dispersal_msg, (commits, ephkey), dealer_id)
+        self.tagvars[tag]['all_shares_valid'] = self._handle_dealer_msgs(tag, dealer_id)
 
         if self.tagvars[tag]['all_shares_valid']:
             shares = {'msg': self.tagvars[tag]['shares'][0], 'rand':self.tagvars[tag]['shares'][1]}
@@ -295,20 +298,18 @@ class ACSS_HT:
                 commitments[k] = self.poly_commit.commit(phi[k], phi_hat[k])
 
 
-        ephemeral_secret_key = self.field.random()
+        ephemeral_secret_key = self.field.rand()
         ephemeral_public_key = self.g**ephemeral_secret_key
         dispersal_msg_list = bytearray()
         for i in range(n):
             shared_key = self.public_keys[i]**ephemeral_secret_key
             phis_i = [phi[k](i + 1) for k in range(self.sc)]
             phis_hat_i = [phi_hat[k](i + 1) for k in range(1, self.sc)]
-            # TODO(@optimize message size here)
-            shares = self.sr.serialize_fs(phis_i+ phis_hat_i)
-            ciphertext = SymmetricCrypto.encrypt(shared_key.__getstate__(), shares)
+            ciphertext = SymmetricCrypto.encrypt(shared_key.__getstate__(), self.sr.serialize_fs(phis_i+ phis_hat_i))
             dispersal_msg_list.extend(ciphertext)
 
-        g_commits = []
-        for k in range(self.sc):
+        g_commits = commitments[0]
+        for k in range(1, self.sc):
             g_commits = g_commits + commitments[k]
         datab = self.sr.serialize_gs(g_commits) # Serializing commitments
         datab.extend(dispersal_msg_list)
@@ -317,22 +318,17 @@ class ACSS_HT:
         return bytes(datab)
     
     #@profile
-    def _handle_dealer_msgs(self, tag, dispersal_msg, rbc_msg, dealer_id):
-        commitments, ephemeral_public_key = rbc_msg
-        shared_key = ephemeral_public_key**self.private_key
+    def _handle_dealer_msgs(self, tag, dealer_id):
+        # TODO(@sourav): To add a check here to match hash
+        commits, phis, phis_hat, ephkey, shared_key = self.data[dealer_id]
         self.tagvars[tag]['shared_key'] = shared_key
-        self.tagvars[tag]['commitments'] = commitments
-        self.tagvars[tag]['ephemeral_public_key'] = ephemeral_public_key
+        self.tagvars[tag]['commitments'] = commits
+        self.tagvars[tag]['ephemeral_public_key'] = ephkey
         
-        try:
-            sharesb = SymmetricCrypto.decrypt(shared_key.__getstate__(), dispersal_msg)
-        except ValueError as e:  # TODO: more specific exception
-            logger.warn(f"Implicate due to failure in decrypting: {e}")
-            return False
-        
-        shares = self.sr.deserialize_fs(sharesb)
+        # shares = self.sr.deserialize_fs(sharesb)
         if self.acss_status[dealer_id]: 
-            self.tagvars[tag]['shares'] =  [shares[:self.sc], shares[self.sc:]]
+            # self.tagvars[tag]['shares'] =  [shares[:self.sc], shares[self.sc:]]
+            self.tagvars[tag]['shares'] =  [phis, phis_hat]
             self.tagvars[tag]['witnesses'] = [None]
             return True
         return False

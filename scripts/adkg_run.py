@@ -55,12 +55,7 @@ async def _run(peers, n, t, my_id, start_time):
             begin_time = time.time()
             logging.info(f"ADKG start time: {(begin_time)}")
             adkg_task = asyncio.create_task(adkg.run_adkg(begin_time))
-            logging.debug(f"Created ADKG task, now waiting...")
             await adkg_task
-            end_time = time.time()
-            adkg_time = end_time-begin_time
-            logging.info(f"ADKG time: {(adkg_time)}")
-            benchmark_logger.info("ADKG time: %f", adkg_time)
             adkg.kill()
             adkg_task.cancel()
         bytes_sent = runner.node_communicator.bytes_sent

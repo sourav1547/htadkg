@@ -102,16 +102,14 @@ class ADKG:
         )
             
     def kill(self):
-        self.benchmark_logger.info("ADKG kill called")
-        self.subscribe_recv_task.cancel()
-        self.benchmark_logger.info("ADKG Recv task canceled called")
-        for task in self.acss_tasks:
-            task.cancel()
-        self.benchmark_logger.info("ADKG ACSS tasks canceled")
-        self.acss.kill()
-        self.benchmark_logger.info("ADKG ACSS killed")
-        self.acss_task.cancel()
-        self.benchmark_logger.info("ADKG ACSS task killed")
+        try:
+            self.subscribe_recv_task.cancel()
+            for task in self.acss_tasks:
+                task.cancel()
+            self.acss.kill()
+            self.acss_task.cancel()
+        except Exception:
+            logging.info("ADKG task finished")
         
 
     def __enter__(self):
@@ -282,7 +280,6 @@ class ADKG:
         work_tasks = await asyncio.gather(*[_setup(j) for j in range(self.n)])
         rbc_signal = asyncio.Event()
         rbc_values = [None for i in range(self.n)]
-        pre_key_signal  = asyncio.Event()
 
         return (
             self.commonsubset(
@@ -295,24 +292,19 @@ class ADKG:
                 [_.put_nowait for _ in aba_inputs],
                 [_.get for _ in aba_outputs],
             ),
-            self.pre_key(
+            self.derive_key(
                 acss_outputs,
                 acss_signal,
                 rbc_values,
                 rbc_signal,
-                pre_key_signal,
-            ),
-            self.derive_key(
-                pre_key_signal,
             ),
             work_tasks,
         )
 
-    async def pre_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal, pre_key_signal):
+    async def derive_key(self, acss_outputs, acss_signal, rbc_values, rbc_signal):
         await rbc_signal.wait()
         rbc_signal.clear()
 
-        
         self.mks = set() # master key set
         for ks in  rbc_values:
             if ks is not None:
@@ -328,7 +320,7 @@ class ADKG:
 
         secrets = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
         randomness = [[self.ZR(0)]*self.n for _ in range(self.sc-1)]
-        commits = [[self.G1(1)]*self.n for _ in range(self.sc-1)]
+        commits = [[self.G1.identity()]*self.n for _ in range(self.sc-1)]
         for idx in range(self.sc-1):
             for node in range(self.n):
                 if node in self.mks:
@@ -336,13 +328,9 @@ class ADKG:
                     randomness[idx][node] = acss_outputs[node]['shares']['rand'][idx]
                     commits[idx][node] = acss_outputs[node]['commits'][idx+1][0]
         
-        # z_shares = [self.ZR(0)]*self.n
-        # r_shares = [self.ZR(0)]*self.n
-        # self.com_keys = [self.G1(1)]*self.n
     
         z_shares =[self.dotprod(self.mat1[i], secrets[0]) + self.dotprod(self.mat2[i], secrets[1]) for i in range(self.n)]
         r_shares = [self.dotprod(self.mat1[i], randomness[0]) + self.dotprod(self.mat2[i], randomness[1]) for i in range(self.n)]
-        self.com_keys = [(self.multiexp(commits[0], self.mat1[i]))*(self.multiexp(commits[1], self.mat2[i])) for i in range(self.n)]
 
         
         # Sending PREKEY messages
@@ -355,6 +343,7 @@ class ADKG:
         sk_shares = []
         rk_shares = []
 
+        secret, random = None, None
         while True:
             (sender, msg) = await recv()
             sk_share, rk_share = msg
@@ -366,47 +355,42 @@ class ADKG:
             if len(sk_shares) >= self.t+1:    
                 secret =  self.poly.interpolate_at(sk_shares, 0)
                 random =  self.poly.interpolate_at(rk_shares, 0)
+                commit = (self.multiexp(commits[0], self.mat1[self.my_id]))*(self.multiexp(commits[1], self.mat2[self.my_id]))
+                if self.multiexp([self.g, self.h],[secret, random]) == commit:
+                    break
+                # TODO(@sourav): Implement the fallback path
 
-                if self.multiexp([self.g, self.h],[secret, random]) == self.com_keys[self.my_id]:
-                    self.shares = (secret, random)
-                    pre_key_signal.set()
-                    return
-                else:
-                    # TODO(@sourav), FIXME!! Implment online error correction
-                    continue
-        
-
-    async def derive_key(self, pre_key_signal):
-        # Waiting for the ABA to terminate
-        await pre_key_signal.wait()
-        pre_key_signal.clear()
-
-        secret, random = self.shares
-        x = self.g**secret
-        y = self.h**random
+        mx = self.g**secret
+        my = self.h**random
         gpok = PoK(self.g, self.ZR, self.multiexp)
         hpok = PoK(self.h, self.ZR, self.multiexp)
-        gchal, gres = gpok.pok_prove(secret, x)
-        hchal, hres = hpok.pok_prove(random, y)
+        gchal, gres = gpok.pok_prove(secret, mx)
+        hchal, hres = hpok.pok_prove(random, my)
 
         keytag = ADKGMsgType.KEY
         send, recv = self.get_send(keytag), self.subscribe_recv(keytag)
 
         for i in range(self.n):
-            send(i, (x, y, gchal, gres, hchal, hres))
+            send(i, (mx, my, gchal, gres, hchal, hres))
         
-        pk_shares = []
+        pk_shares = [[self.my_id+1, mx]]
+        rk_shares = [[self.my_id+1, my]]
         while True:
             (sender, msg) = await recv()
-            x, y, gchal, gres, hchal, hres = msg
-            
-            valid_pok = gpok.pok_verify(x, gchal, gres) and hpok.pok_verify(y, hchal, hres)
-            if valid_pok and x*y == self.com_keys[sender]:
-                pk_shares.append([sender+1, x])
-                if len(pk_shares) > self.deg:
-                    break
+            if sender != self.my_id:
+                x, y, gchal, gres, hchal, hres = msg
+                valid_pok = gpok.pok_verify(x, gchal, gres) and hpok.pok_verify(y, hchal, hres)
+                if valid_pok:
+                    pk_shares.append([sender+1, x])
+                    rk_shares.append([sender+1, y])
+
+            if len(pk_shares) > self.deg:
+                break
         pk =  interpolate_g1_at_x(pk_shares, 0, self.G1, self.ZR)
-        
+        rk =  interpolate_g1_at_x(rk_shares, 0, self.G1, self.ZR)
+        com0 = self.multiexp(commits[0], [self.ZR(1)]*self.n)
+        # TODO:(@sourav) FIXME! Add the fallback path
+        assert pk*rk == com0
         return (self.mks, secret, pk)
 
     async def run_adkg(self, start_time):
@@ -420,16 +404,15 @@ class ADKG:
         await acss_signal.wait()
         acss_signal.clear()
         acss_time = time.time() - acss_start_time
-        logging.info(f"ACSS time: {(acss_time)}")
+        self.benchmark_logger.info(f"ACSS time: {(acss_time)}")
         key_proposal = list(acss_outputs.keys())
         create_acs_task = asyncio.create_task(self.agreement(key_proposal, acss_outputs, acss_signal))
-        acs, pre_key_task, key_task, work_tasks = await create_acs_task
+        acs, key_task, work_tasks = await create_acs_task
         await acs
-        await pre_key_task
         output = await key_task
         adkg_time = time.time()-start_time
-        self.benchmark_logger.info("ADKG time2: %f", adkg_time)
-        logging.info(f"ADKG time: {(adkg_time)}")
+        logging.info("ADKG time 2: %f", adkg_time)
+        self.benchmark_logger.info("ADKG time: %f", adkg_time)
         await asyncio.gather(*work_tasks)
         mks, sk, pk = output
         self.output_queue.put_nowait((values[1], mks, sk, pk))

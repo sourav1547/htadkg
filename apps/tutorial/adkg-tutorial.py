@@ -62,8 +62,11 @@ async def _run(peers, n, t, my_id, start_time):
             adkg_time = end_time-begin_time
             logging.info(f"ADKG time: {(adkg_time)}")
             benchmark_logger.info("ADKG time: %f", adkg_time)
-            adkg.kill()
-            adkg_task.cancel()
+            try:
+                adkg.kill()
+                adkg_task.cancel()
+            except:
+                print("Processed killed!")
         bytes_sent = runner.node_communicator.bytes_sent
         for k,v in runner.node_communicator.bytes_count.items():
             print(f"[{my_id}] Bytes Sent: {k}:{v} which is {round((100*v)/bytes_sent,3)}%")

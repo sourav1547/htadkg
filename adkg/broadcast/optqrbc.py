@@ -187,10 +187,12 @@ async def optqrbc(sid, pid, n, f, leader, predicate, input, output, send, receiv
                     if _digest == leader_hash:
                         committed = True
                         output(leader_msg)
+                        return
                         broadcast((RBCMsgType.TERMINATE, 0))
                     elif _digest == reconstructed_hash:
                         committed = True
                         output(reconstructed_msg)  
+                        return
                         broadcast((RBCMsgType.TERMINATE, 0))
                     else:
                         broadcast((RBCMsgType.ADD_TRIGGER, 0))
@@ -247,6 +249,7 @@ async def optqrbc(sid, pid, n, f, leader, predicate, input, output, send, receiv
                     if reconstructed_hash == committed_hash:
                         committed = True
                         output(reconstructed_msg)  
+                        return
                         broadcast((RBCMsgType.TERMINATE, 0))
         except Exception as e:
             print(e)

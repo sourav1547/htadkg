@@ -33,10 +33,10 @@ def gen_vector(t, deg, n):
 
     return (rm_1.tolist(), rm_2.tolist())
 
-async def _run(peers, n, t, my_id, start_time):
+async def _run(peers, n, t, k, my_id, start_time):
     g, h, pks, sks = get_avss_params(n, G1)
     pc = PolyCommitHybrid(g, h, ZR, multiexp)
-    deg = 2*t
+    deg = k
     mat1, mat2 = gen_vector(t, deg, n)
     async with ProcessProgramRunner(peers, n, t, my_id) as runner:
         send, recv = runner.get_send_recv("")
@@ -76,6 +76,7 @@ if __name__ == "__main__":
                 HbmpcConfig.peers,
                 HbmpcConfig.N,
                 HbmpcConfig.t,
+                HbmpcConfig.k,
                 HbmpcConfig.my_id,
                 HbmpcConfig.time,
             )

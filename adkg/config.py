@@ -54,6 +54,7 @@ class ReconstructionConfig(object):
 class HbmpcConfig(object):
     N = None
     t = None
+    k = None
     my_id = None
     peers = None
     skip_preprocessing = False
@@ -96,6 +97,7 @@ class HbmpcConfig(object):
 
             HbmpcConfig.N = config["N"]
             HbmpcConfig.t = config["t"]
+            HbmpcConfig.k = config["k"]
             HbmpcConfig.my_id = config["my_id"]
             HbmpcConfig.peers = {
                 peerid: NodeDetails(addrinfo.split(":")[0], int(addrinfo.split(":")[1]))
@@ -120,5 +122,6 @@ class HbmpcConfig(object):
             assert HbmpcConfig.my_id is not None, "Node Id: missing"
             assert HbmpcConfig.N is not None, "N: missing"
             assert HbmpcConfig.t is not None, "t: missing"
+            assert HbmpcConfig.k is not None, "k: missing"
             assert HbmpcConfig.peers is not None, "peers: missing"
             assert HbmpcConfig.time is not None, "time: missing"

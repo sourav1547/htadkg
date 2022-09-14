@@ -88,7 +88,7 @@ class ADKG:
         self.poly.clear_cache() #FIXME: Not sure why we need this.
         # Create a mechanism to split the `recv` channels based on `tag`
         self.subscribe_recv_task, self.subscribe_recv = subscribe_recv(recv)
-        self.mat1 , self.mat2 = matrices
+        self.matrix = matrices
 
         # Create a mechanism to split the `send` channels based on `tag`
         def _send(tag):
@@ -329,8 +329,12 @@ class ADKG:
                     commits[idx][node] = acss_outputs[node]['commits'][idx+1][0]
         
     
-        z_shares =[self.dotprod(self.mat1[i], secrets[0]) + self.dotprod(self.mat2[i], secrets[1]) for i in range(self.n)]
-        r_shares = [self.dotprod(self.mat1[i], randomness[0]) + self.dotprod(self.mat2[i], randomness[1]) for i in range(self.n)]
+        z_shares = [self.ZR(0)]*self.n
+        r_shares = [self.ZR(0)]*self.n
+        for i in range(self.n):
+            for sec in range(self.sc-1):
+                z_shares[i] = z_shares[i] + self.dotprod(self.matrix[sec][i], secrets[sec])
+                r_shares[i] = r_shares[i] + self.dotprod(self.matrix[sec][i], randomness[sec])
 
         
         # Sending PREKEY messages
@@ -355,7 +359,9 @@ class ADKG:
             if len(sk_shares) >= self.t+1:    
                 secret =  self.poly.interpolate_at(sk_shares, 0)
                 random =  self.poly.interpolate_at(rk_shares, 0)
-                commit = (self.multiexp(commits[0], self.mat1[self.my_id]))*(self.multiexp(commits[1], self.mat2[self.my_id]))
+                commit = self.G1.identity()
+                for sec in range(self.sc-1):
+                    commit = commit*self.multiexp(commits[sec], self.matrix[sec][self.my_id])
                 if self.multiexp([self.g, self.h],[secret, random]) == commit:
                     break
                 # TODO(@sourav): Implement the fallback path

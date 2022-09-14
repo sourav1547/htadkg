@@ -20,6 +20,7 @@ def get_instance_configs(instance_ips, extra={}):
         config = {
             "N": AwsConfig.MPC_CONFIG.N,
             "t": AwsConfig.MPC_CONFIG.T,
+            "k": AwsConfig.MPC_CONFIG.K,
             "my_id": my_id,
             "peers": [f"{ip}:{port}" for ip in instance_ips],
             "reconstruction": {"induce_faults": False},

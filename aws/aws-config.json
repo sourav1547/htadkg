@@ -4,7 +4,7 @@
         "command": "python3 -m scripts.adkg_run",
         "t": 5, 
         "n": 16,
-        "k": 10,
+        "k": 5,
         "num_faulty_nodes": 0,
         "port": 7001
     },

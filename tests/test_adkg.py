@@ -6,8 +6,8 @@ import asyncio
 import numpy as np
 import uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-# from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod
-from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp, curve25519dotprod as dotprod
+from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod
+# from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp, curve25519dotprod as dotprod
     
 import time
 
@@ -32,7 +32,7 @@ def gen_vector(t, deg, n):
 
 @mark.asyncio
 async def test_adkg(test_router):
-    t = 3
+    t = 1
     deg = t
     n = 3 * t + 1
 

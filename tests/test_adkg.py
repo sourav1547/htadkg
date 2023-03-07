@@ -7,7 +7,7 @@ import asyncio
 import numpy as np
 import uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod
+# from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod
 # from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp, curve25519dotprod as dotprod
     
 import time
@@ -27,8 +27,12 @@ def ths(pytestconfig):
 def deg(pytestconfig):
     return pytestconfig.getoption("deg")
 
+@fixture(scope="session")
+def curve(pytestconfig):
+    return pytestconfig.getoption("curve")
 
-def get_avss_params(n, G1):
+
+def get_avss_params(n, G1, ZR):
     g, h = G1.rand(b'g'), G1.rand(b'h')
     public_keys, private_keys = [None] * n, [None] * n
     for i in range(n):
@@ -37,7 +41,7 @@ def get_avss_params(n, G1):
     return g, h, public_keys, private_keys
 
 
-def gen_vector(t, deg, n):
+def gen_vector(t, deg, n, ZR):
     coeff_1 = np.array([[ZR(i+1)**j for j in range(t+1)] for i in range(n)])
     coeff_2 = np.array([[ZR(i+1)**j for j in range(t+1, deg+1)] for i in range(n)])
     hm_1 = np.array([[ZR(i+1)**j for j in range(n)] for i in range(t+1)])
@@ -48,19 +52,24 @@ def gen_vector(t, deg, n):
     return (rm_1.tolist(), rm_2.tolist())
 
 @mark.asyncio
-async def test_adkg(test_router, num, ths, deg):
+async def test_adkg(test_router, num, ths, deg, curve):
     t = int(ths)
     deg = int(deg)
     n = int(num)
+
+    if curve == "bls12381":
+        from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod  
+    else:
+        from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp, curve25519dotprod as dotprod
     
     assert n > 3*t and deg < n-t
     
     logging.info(f"ADKG Experiment with n:{n}, t:{t}, deg:{deg}")
 
-    g, h, pks, sks = get_avss_params(n, G1)
+    g, h, pks, sks = get_avss_params(n, G1, ZR)
     sends, recvs, _ = test_router(n, maxdelay=0.01)
     pc = PolyCommitHybrid(g, h, ZR, multiexp)
-    mat1, mat2 = gen_vector(t, deg, n)
+    mat1, mat2 = gen_vector(t, deg, n, ZR)
 
     dkg_tasks = [None] * n # async task for adkg
     dkg_list = [None] * n #

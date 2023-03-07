@@ -1,7 +1,7 @@
 # How to run?
 1. `cd /path/to/adkg`
-2. Update the config with appropriate parameters. Run `python -m aws.run-on-ec2` to start the AWS instances and run the adkg command specified in the config. This command creates a `current.vms` file which consists of instance ids of the VMs created during this run. Subsequent runs of this command will reuse the same VMs.
-3. After you are done testing you can delete the VMs using `python -m aws.delete_vms`.
+2. Update the config with appropriate parameters. Run `python3 -m aws.run-on-ec2` to start the AWS instances and run the adkg command specified in the config. This command creates a `current.vms` file which consists of instance ids of the VMs created during this run. Subsequent runs of this command will reuse the same VMs.
+3. After you are done testing you can delete the VMs using `python3 -m aws.delete_vms`.
 4. The value of `N` for the total number of VMs created in all the regions.
 
 # Configuration
@@ -14,7 +14,7 @@
         1. `command`: The command to run to trigger the MPC application.
         2. `t`: Number of corrupt nodes.
         3. `port`: Port on which the node is listening.
-        4. `num_triples`: Number of triples which need to be generated in the preprocessing phase.
+        4. `k`: The degree of the ADKG polynomial
     2. `aws`: AWS related configuration.
         1. `setup_file_path`: Path to a shell script which contains all commands required to be run when starting up the instance.
         2. `region`: Contains AWS region specific information.

@@ -29,7 +29,7 @@ $ docker-compose run --rm adkg bash
 
    Note that `n>3*t` and `deg < n-t`
 ```
-$ pytest tests/test_adkg.py -o log_cli=true --num 4 --ths 1 --deg 2
+$ pytest tests/test_adkg.py -o log_cli=true --num 4 --ths 1 --deg 2 --curve ed25519
 ```
  
 ## Running locally on multiple processes within a docker image

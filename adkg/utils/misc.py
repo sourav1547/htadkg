@@ -7,6 +7,8 @@ import logging
 
 
 def print_exception_callback(future):
+    if future.cancelled():
+        return
     if future.done():
         ex = future.exception()
         if ex is not None:

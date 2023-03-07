@@ -14,6 +14,7 @@ services:
       - ./.benchmarks:/usr/src/adkg/.benchmarks
       - ./aws:/usr/src/adkg/aws
       - ./conf:/usr/src/adkg/conf
+      - ./logs:/usr/src/adkg/logs
       - ./docs:/usr/src/adkg/docs
       - ./adkg:/usr/src/adkg/adkg
       - ./scripts:/usr/src/adkg/scripts

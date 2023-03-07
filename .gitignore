@@ -1,5 +1,5 @@
 current.vms
-logs/
+logs/*.log
 benchmark-logs/benchmark.log
 dump.log
 **/__pycache__
@@ -11,3 +11,7 @@ tests/.pytest.log
 .dockerignore
 data/
 aws/aws-config.json
+.pytest_cache
+.benchmarks
+.flake8
+.coveragerc

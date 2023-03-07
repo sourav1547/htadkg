@@ -45,7 +45,7 @@ Note: Required tools and build instructions are same as above
 ```$docker-compose run --rm adkg bash ```
 
 2. Start the ADKG instances
-```$sh scripts/launch-tmuxlocal.sh apps/tutorial/adkg-tutorial.py [NUM_NODES]```
+```$sh scripts/launch-tmuxlocal.sh scripts/adkg-tutorial.py [NUM_NODES]```
 
 
 ## Running in AWS instances

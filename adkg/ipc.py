@@ -57,13 +57,11 @@ class NodeCommunicator(object):
             if i != self.my_id:
                 self._sender_queues[i].put_nowait(NodeCommunicator.LAST_MSG)
         await asyncio.gather(*self._dealer_tasks)
-        self.benchmark_logger.debug("Dealer task finished.")
-        self._router_task.cancel()
-        self.benchmark_logger.debug("Router task cancelled.")
         # self.zmq_context.destroy(linger=self.linger_timeout) # wait here
-        self.benchmark_logger.info("Total bytes sent out: %d", self.bytes_sent)
-        for k,v in self.bytes_count.items():
-            print(f"[{self.my_id}] Bytes Sent: {k}:{v}, {round((100*v)/self.bytes_sent,2)}%")
+        self._router_task.cancel()
+        # self.benchmark_logger.info("Total bytes sent out: %d", self.bytes_sent)
+        # for k,v in self.bytes_count.items():
+            # print(f"[{self.my_id}] Bytes Sent: {k}:{v}, {round((100*v)/self.bytes_sent,2)}%")
 
     async def _setup(self):
         # Setup one router for a party, this acts as a
@@ -164,13 +162,9 @@ class ProcessProgramRunner(object):
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        print("Waiting for programms to finish.")
         await asyncio.gather(*self.progs)
-        print("All programs finished.")
         await self.node_communicator.__aexit__(exc_type, exc, tb)
-        print("NodeCommunicator closed.")
         self.subscribe_task.cancel()
-        print("Subscribe task cancelled.")
 
 
 async def verify_all_connections(peers, n, my_id):

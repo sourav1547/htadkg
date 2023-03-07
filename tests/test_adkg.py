@@ -1,5 +1,6 @@
 from adkg.poly_commit_hybrid import PolyCommitHybrid
-from pytest import mark
+from pytest import mark, fixture
+import logging
 from adkg.polynomial import polynomials_over
 from adkg.adkg import ADKG
 import asyncio
@@ -10,6 +11,22 @@ from pypairing import ZR, G1, blsmultiexp as multiexp, dotprod
 # from pypairing import Curve25519ZR as ZR, Curve25519G as G1, curve25519multiexp as multiexp, curve25519dotprod as dotprod
     
 import time
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.NOTSET)
+
+@fixture(scope="session")
+def num(pytestconfig):
+    return pytestconfig.getoption("num")
+
+@fixture(scope="session")
+def ths(pytestconfig):
+    return pytestconfig.getoption("ths")
+
+@fixture(scope="session")
+def deg(pytestconfig):
+    return pytestconfig.getoption("deg")
+
 
 def get_avss_params(n, G1):
     g, h = G1.rand(b'g'), G1.rand(b'h')
@@ -31,10 +48,14 @@ def gen_vector(t, deg, n):
     return (rm_1.tolist(), rm_2.tolist())
 
 @mark.asyncio
-async def test_adkg(test_router):
-    t = 1
-    deg = t
-    n = 3 * t + 1
+async def test_adkg(test_router, num, ths, deg):
+    t = int(ths)
+    deg = int(deg)
+    n = int(num)
+    
+    assert n > 3*t and deg < n-t
+    
+    logging.info(f"ADKG Experiment with n:{n}, t:{t}, deg:{deg}")
 
     g, h, pks, sks = get_avss_params(n, G1)
     sends, recvs, _ = test_router(n, maxdelay=0.01)

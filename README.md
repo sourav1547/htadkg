@@ -1,65 +1,52 @@
-# Prototype implementation of High-threshold Asynchronous Distributed Key Generation
-
-NOTE: This is a research implementation and may contain security issues. Do not use this for production.
+# Artifact of of High-threshold Asynchronous Distributed Key Generation
 
 
-# Running and benchmarking `adkg`
-First, docker-compose will need to be installed if it has not been previously:
+## File structures
 
+
+## Running on local machine
+
+### Required tools
 1. Install `Docker`_. (For Linux, see `Manage Docker as a non-root user`_) to
-   run ``docker`` without ``sudo``.)
+run ``docker`` without ``sudo``.)
 
-2. Install `docker-compose`.
+2. Install `docker-compose`
 
-Next, the image will need to be built  (this will likely take a while)
+### Building
+
+1. The image will need to be built  (this will likely take a while). Inside the `htadkg` folder run
 ```
 $ docker-compose build adkg
 ```
 
-## Running tests and generating data points for adkg
+### Running tests
 
-You need to start a shell session in a container. The first run will take longer if the docker image hasn't already been built:
+1. You need to start a shell session in a container. The first run will take longer if the docker image hasn't already been built:
 ```
 $ docker-compose run --rm adkg bash
 ```
 
-Then, to test the `adkg` code locally, i.e., multiple thread in a single docker container, you need to run
-```
-$ pytest tests/test_adkg.py
-```
+2. Then, to test the `adkg` code locally, i.e., multiple thread in a single docker container, you need to run the following command with parameters:
+      - `num`: Number of nodes, 
+      - `ths`: fault-tolerance threshold, and 
+      - `deg`: Degree of the ADKG polynomial. 
 
-### Debug using `vscode`
-To debug the code using `vscode`, first uncomment the following from `Dockerfile`
+   Note that `n>3*t` and `deg < n-t`
 ```
-# RUN pip install debugpy
-# ENTRYPOINT [ "python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "-m"]
+$ pytest tests/test_adkg.py -o log_cli=true --num 4 --ths 1 --deg 2
 ```
+ 
+## Running locally on multiple processes within a docker image
 
-Rebuild the `docker` images by runnning
-```
-docker-compose build adkg
-```
+Note: Required tools and build instructions are same as above
 
-Then `debug` by running the following command. Make sure to run the debugging in `vscode` after executing the following command. 
-```
-docker-compose run -p 5678:5678 adkg pytest tests/test_adkg.py 
-```
-
-### Run on multiple processes within a docker image
+### Running tests
 1. Start a docker image by running
 ```$docker-compose run --rm adkg bash ```
 
 2. Start the ADKG instances
-```$sh scripts/launch-tmuxlocal.sh apps/tutorial/adkg-tutorial.py conf/adkg/local```
+```$sh scripts/launch-tmuxlocal.sh apps/tutorial/adkg-tutorial.py [NUM_NODES]```
+
 
 ## Running in AWS instances
-
-For remote deployment first build using
-```
-docker build -t adkg-remote . --build-arg BUILD=dev
-```
-
-## Todo:
-- [ ] Use FFT for faster polynomial evaluation (including in exponents).
-- [ ] Terminate the optrbc threads.
-- [ ] Take reconstruction threshold and group as a public parameter.
+Please refer to `aws/README.md` for detailed information on how to run the protocol using amazon web services

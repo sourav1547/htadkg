@@ -400,7 +400,7 @@ class ADKG:
         return (self.mks, secret, pk)
 
     async def run_adkg(self, start_time):
-        logging.info(f"Run ADKG called")
+        logging.info(f"Starting ADKG for node {self.my_id}")
         acss_outputs = {}
         acss_signal = asyncio.Event()
 
@@ -417,8 +417,9 @@ class ADKG:
         await acs
         output = await key_task
         adkg_time = time.time()-start_time
-        logging.info("ADKG time 2: %f", adkg_time)
-        self.benchmark_logger.info("ADKG time: %f", adkg_time)
         await asyncio.gather(*work_tasks)
         mks, sk, pk = output
         self.output_queue.put_nowait((values[1], mks, sk, pk))
+        
+        self.benchmark_logger.info("ADKG time: %f", adkg_time)
+        logging.info(f"ADKG finished! Node {self.my_id}, time: {adkg_time} (seconds)")

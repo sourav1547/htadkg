@@ -12,12 +12,12 @@ fi
 
 if [ -z "$1" ]
   then
-    echo "MPC file to run not specified."
+    echo "ADKG file to run not specified."
 fi
 
 if [ -z "$2" ]
   then
-    echo "MPC config file prefix not specified."
+    echo "ADKG config file prefix not specified."
 fi
 
 # Change dir/file.py to dir.file
@@ -27,21 +27,19 @@ DOT_SEPARATED_PATH=$(IFS=. ; echo "${DIRS[*]}")
 # MODULE_PATH=${DOT_SEPARATED_PATH: : -3}
 MODULE_PATH=${DOT_SEPARATED_PATH%???}
 
-CONFIG_PATH=$2
+NUM_NODES=$2
+CONFIG_PATH="conf/adkg_${NUM_NODES}/local"
 
 CMD="python3 -m ${MODULE_PATH}"
 echo ">>> Command to be executed: '${CMD}'"
 
-# Create simulated latency using tc
-# sudo sh scripts/latency-control.sh stop
-# sudo sh scripts/latency-control.sh start 50ms 10ms
 
 start_time=$(date +%s)
 start_time=$((start_time+2))
 
-## TODO: the following was used for launching a larger number
+## The following was used for launching a larger number
 ## of processes locally, with only a portion of them shown in tmux
-for ID in $(seq 4 13)
+for ID in $(seq 4 $NUM_NODES)
 do
    echo
    ${CMD} -d -f ${CONFIG_PATH}.${ID}.json -time $start_time > logs/logs-${ID}.log 2>&1 &
@@ -55,8 +53,5 @@ if [ -z "$3" ]
     tmux new-session     "${CMD} -d -f ${CONFIG_PATH}.0.json -time $start_time; sh" \; \
         splitw -h -p 50 "${CMD} -d -f ${CONFIG_PATH}.1.json -time $start_time; sh" \; \
         splitw -v -p 66 "${CMD} -d -f ${CONFIG_PATH}.2.json -time $start_time; sh" \; \
-        splitw -v -p 50 "${CMD} -d -f ${CONFIG_PATH}.3.json -time $start_time; sh" \; \
-        # selectp -t 0 \; \
-        # splitw -v -p 66 "${CMD} -d -f ${CONFIG_PATH}.4.json; sh" \; \
-        # splitw -v -p 50 "${CMD} -d -f ${CONFIG_PATH}.5.json; sh"
+        splitw -v -p 50 "${CMD} -d -f ${CONFIG_PATH}.3.json -time $start_time; sh" \;
 fi

@@ -1,8 +1,4 @@
-# Artifact of of High-threshold Asynchronous Distributed Key Generation
-
-
-## File structures
-
+# Prototype implementation for the paper Practical Asynchronous High-threshold Distributed Key Generation and Distributed Polynomial Sampling
 
 ## Running on local machine
 
@@ -50,3 +46,14 @@ Note: Required tools and build instructions are same as above
 
 ## Running in AWS instances
 Please refer to `aws/README.md` for detailed information on how to run the protocol using amazon web services
+
+
+To cite:
+```
+@inproceedings{das2023practical,
+   title={Practical Asynchronous High-threshold Distributed Key Generation and Distributed Polynomial Sampling},
+   author={Das, Sourav and Xiang, Zhuolun and Kokoris-Kogias, Lefteris and Ren, Ling},
+   booktitle={31st USENIX Security Symposium (USENIX Security 23)},
+   year={2023}
+}
+```

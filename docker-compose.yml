@@ -8,7 +8,6 @@ services:
     cap_add:
       - NET_ADMIN
     volumes:
-      - ./apps:/usr/src/adkg/apps
       - ./progs:/usr/src/adkg/progs
       - ./benchmark:/usr/src/adkg/benchmark
       - ./.benchmarks:/usr/src/adkg/.benchmarks

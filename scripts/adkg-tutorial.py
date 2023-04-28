@@ -4,7 +4,7 @@ ADKG tutorial.
 Instructions:
    run this with
 ```
-sh scripts/launch-tmuxlocal.sh apps/tutorial/adkg-tutorial.py conf/adkg/local
+sh scripts/launch-tmuxlocal.sh scripts/adkg-tutorial.py [NUM\_NODES]
 ```
 """
 from adkg.config import HbmpcConfig

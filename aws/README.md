@@ -1,5 +1,5 @@
 # How to run?
-1. `cd /path/to/adkg`
+1. `cd /path/to/htadkg`
 2. Update the config with appropriate parameters. Run `python3 -m aws.run-on-ec2` to start the AWS instances and run the adkg command specified in the config. This command creates a `current.vms` file which consists of instance ids of the VMs created during this run. Subsequent runs of this command will reuse the same VMs.
 3. After you are done testing you can delete the VMs using `python3 -m aws.delete_vms`.
 4. The value of `N` for the total number of VMs created in all the regions.
@@ -37,7 +37,7 @@ There is a `BenchmarkLogger` which must be used when logging any benchmak data. 
 # Building the docker image for AWS
 Use the following commands to push the image to dockerhub. Avoid building the image using `docker-compose` since it doesn't the ignore files specified in `.dockerignore`.
 ```
-cd /path/to/adkg
+cd /path/to/htadkg
 docker build -t adkg . --build-arg BUILD=dev
 docker tag adkg:latest sourav1547/htadkg:latest # Replace with appropriate DockerHub location
 docker push sourav1547/htadkg:latest # Replace with appropriate DockerHub location

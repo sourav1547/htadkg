@@ -43,6 +43,9 @@ Note: Required tools and build instructions are same as above
 2. Start the ADKG instances
 ```$sh scripts/launch-tmuxlocal.sh scripts/adkg-tutorial.py [NUM_NODES]```
 
+For this basic test, by default our artifact supports 16, 32, and 64 nodes. To evaluate with arbitrary `num,ths` and `deg`, first, generate the corresponding configuration files using `gen_config.py`. We recommend testing with 16 and 32 nodes for quicker results.
+
+NOTE: Although this process runs `NUM_NODES` number of ADKG nodes, our artifact only displays the log of the first four nodes. All remaining logs are available at `dump.log`.
 
 ## Running in AWS instances
 Please refer to `aws/README.md` for detailed information on how to run the protocol using amazon web services

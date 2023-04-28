@@ -154,15 +154,11 @@ COPY --from=build ${PYTHON_LIBRARY_PATH} ${PYTHON_LIBRARY_PATH}
 COPY --from=build /usr/local/include/ /usr/local/include/
 COPY --from=build ${LIBRARY_PATH} ${LIBRARY_PATH}
 
-# COPY apps/asynchromix/cpp/ apps/asynchromix/cpp/
-# RUN make -C apps/asynchromix/cpp
-
 COPY setup.py .
 COPY README.md .
 COPY adkg/__version__.py adkg/
 COPY adkg/__init__.py adkg/
 COPY adkg/ntl/ adkg/ntl/
-# COPY apps/asynchromix/solver/ apps/asynchromix/solver/
 RUN pip install -e .['tests,docs']
 
 # This is the target that can minimally run the unit tests.
